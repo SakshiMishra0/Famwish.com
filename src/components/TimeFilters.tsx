@@ -1,33 +1,46 @@
-"use client";
+// src/components/TimeFilters.tsx
+import React from "react";
 
-interface Props {
-  value: "week" | "month" | "year" | "all";
-  onChange: (val: "week" | "month" | "year" | "all") => void;
-}
+type FilterOption = "week" | "month" | "year" | "all";
 
-const options = [
-  { label: "This Week", value: "week" },
-  { label: "This Month", value: "month" },
-  { label: "This Year", value: "year" },
-  { label: "All Time", value: "all" },
+type Option = {
+  label: string;
+  value: FilterOption;
+};
+
+type Props = {
+  value: FilterOption;
+  onChange: (v: FilterOption) => void;
+  className?: string;
+};
+
+const OPTIONS: Option[] = [
+  { label: "1W", value: "week" },
+  { label: "1M", value: "month" },
+  { label: "1Y", value: "year" },
+  { label: "All", value: "all" },
 ];
 
-export default function TimeFilters({ value, onChange }: Props) {
+const TimeFilters: React.FC<Props> = ({ value, onChange, className = "" }) => {
   return (
-    <div className="flex gap-2 flex-wrap">
-      {options.map((o) => (
+    <div className={`inline-flex items-center gap-2 ${className}`}>
+      {OPTIONS.map((o) => (
         <button
           key={o.value}
           onClick={() => onChange(o.value)}
-          className={`px-4 py-2 text-sm rounded-full border ${
+          className={`px-4 py-2 text-sm rounded-full border transition-colors duration-150 ${
             value === o.value
               ? "bg-[#22163F] text-white border-transparent"
-              : "bg-white text-[#22163F] border-gray-200 hover:bg-gray-100"
+              : "bg-white text-gray-700 border-gray-200 hover:bg-gray-50"
           }`}
+          aria-pressed={value === o.value}
+          type="button"
         >
           {o.label}
         </button>
       ))}
     </div>
   );
-}
+};
+
+export default TimeFilters;

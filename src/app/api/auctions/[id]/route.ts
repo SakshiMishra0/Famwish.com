@@ -1,190 +1,144 @@
-// src/app/api/auction/[id]/route.ts
-import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/app/api/auth/[...nextauth]/route";
-import clientPromise from "@/lib/mongodb";
-import { ObjectId, UpdateFilter, Document } from "mongodb";
+// src/app/api/auctions/[id]/route.ts
+import { NextRequest, NextResponse } from "next/server";
+import { MongoClient, ObjectId, Db } from "mongodb";
 
-const MIN_INCREMENT = 50;
-const DATABASE_NAME = process.env.MONGODB_DB;
+/**
+ * Cached Mongo client for Next.js runtime to avoid connection explosion.
+ */
+let cached: { client: MongoClient; db: Db } | undefined;
 
-interface Bid {
-    userId: ObjectId;
-    userName: string;
-    amount: number;
-    timestamp: Date;
-}
+async function connectToDatabase(): Promise<{ client: MongoClient; db: Db }> {
+  if (cached) return cached;
 
-interface AuctionDocument extends Document {
-  _id: ObjectId;
-  title: string;
-  bid: string;
-  currentHighBid: number;
-  startingBid: number;
-  bids: number;
-  description: string;
-  category: string;
-  createdBy: ObjectId;
-  endDate: Date;
-  bidsHistory: Bid[]; 
-  topBidderId?: ObjectId; 
-  [key: string]: any; 
-}
+  const uri = process.env.MONGODB_URI || process.env.MONGODB_URL;
+  if (!uri) {
+    throw new Error("MONGODB_URI environment variable is not set.");
+  }
 
-interface RouteContext {
-    params: {
-        id: string;
-    }
+  const client = new MongoClient(uri);
+  await client.connect();
+  const dbName = process.env.MONGODB_DB || "famwish";
+  const db = client.db(dbName);
+
+  cached = { client, db };
+  return cached;
 }
 
 /**
- * GET: Fetch a single auction and its bid history.
+ * Safely convert string id to ObjectId. Returns null if invalid.
  */
+function toObjectId(id?: string): ObjectId | null {
+  if (!id) return null;
+  try {
+    return new ObjectId(id);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Helper to normalize a Mongo document to JSON-friendly object
+ */
+function normalizeDoc(doc: any) {
+  if (!doc) return doc;
+  const copy: any = { ...doc };
+  if (copy._id && typeof copy._id.toString === "function") copy._id = copy._id.toString();
+  if (copy.createdBy && typeof copy.createdBy.toString === "function") copy.createdBy = copy.createdBy.toString();
+  if (copy.topBidderId && typeof copy.topBidderId.toString === "function") copy.topBidderId = copy.topBidderId.toString();
+  return copy;
+}
+
+/**
+ * NOTE: Next.js generated types for route handlers expect `context.params` to be a Promise
+ * in this app / version. So we use `context: { params: Promise<{ id: string }> }`
+ * and `await context.params` to satisfy the type checker.
+ */
+
+/** GET /api/auctions/[id] */
 export async function GET(
-  request: Request,
-  context: RouteContext
-) {
-  const { id } = context.params;
-
-  if (!id || !ObjectId.isValid(id)) { // Ensured ID exists and is valid
-    // This is the source of the 400 Bad Request, must return JSON here
-    return NextResponse.json({ error: "Invalid or missing Auction ID" }, { status: 400 }); 
-  }
-
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
   try {
-    const client = await clientPromise;
-    const db = client.db(process.env.MONGODB_DB);
+    const { db } = await connectToDatabase();
+    const { id } = await context.params;
+    const oid = toObjectId(id);
 
-    const auction = await db.collection<AuctionDocument>("auctions").findOne({
-      _id: new ObjectId(id),
-    });
-
-    if (!auction) {
-      return NextResponse.json({ error: "Auction not found" }, { status: 404 });
+    if (!oid) {
+      return NextResponse.json({ error: "Invalid id parameter" }, { status: 400 });
     }
-    
-    // ... (rest of the session and wishlist logic remains unchanged)
-    // Ensure `isWishlisted` is defined to avoid TS compile error (default false for unauthenticated users)
-    const isWishlisted = false;
 
-    return NextResponse.json({
-      ...auction,
-      _id: auction._id.toString(),
-      createdBy: auction.createdBy.toString(),
-      isWishlisted,
-    });
-  } catch (e) {
-    console.error(`🛑 MongoDB connection or query failed for auction ID ${id}:`, e);
-    // Ensure 500 error also returns JSON
-    return NextResponse.json(
-      { error: "Failed to fetch auction details" },
-      { status: 500 }
-    );
+    const auction = await db.collection("auctions").findOne({ _id: oid });
+    if (!auction) return NextResponse.json({ error: "Auction not found" }, { status: 404 });
+
+    return NextResponse.json(normalizeDoc(auction), { status: 200 });
+  } catch (err: any) {
+    console.error("GET /api/auctions/[id] error:", err);
+    return NextResponse.json({ error: err?.message || "Server error" }, { status: 500 });
   }
 }
 
-/**
- * POST: Place a new bid on an auction.
- */
-export async function POST(
-  request: Request,
-  context: RouteContext
-) {
-  const { id } = context.params;
-  const session = await getServerSession(authOptions);
-
-  if (!session || !session.user) {
-    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
-  }
-  
-  const userRole = (session.user as { role: string }).role;
-  if (userRole !== "bidder") {
-     return NextResponse.json({ error: "Forbidden. Only bidders can place bids." }, { status: 403 });
-  }
-
-  const { bidAmount } = await request.json();
-  const userId = (session.user as { id: string }).id;
-  const userName = (session.user as { name: string }).name || (session.user as { email: string }).email;
-
-  if (!ObjectId.isValid(id)) {
-    return NextResponse.json({ error: "Invalid Auction ID" }, { status: 400 });
-  }
-  if (!bidAmount || isNaN(Number(bidAmount)) || Number(bidAmount) <= 0) {
-    return NextResponse.json({ error: "Invalid bid amount" }, { status: 400 });
-  }
-
-  const numericBid = Number(bidAmount);
-
+/** PUT /api/auctions/[id] */
+export async function PUT(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
   try {
-    const client = await clientPromise;
-    const db = client.db(DATABASE_NAME);
-    const auctionsCollection = db.collection<AuctionDocument>("auctions"); 
+    const { db } = await connectToDatabase();
+    const { id } = await context.params;
+    const oid = toObjectId(id);
 
-    const auction = await auctionsCollection.findOne({
-      _id: new ObjectId(id),
-    });
-
-    if (!auction) {
-      return NextResponse.json({ error: "Auction not found" }, { status: 404 });
+    if (!oid) {
+      return NextResponse.json({ error: "Invalid id parameter" }, { status: 400 });
     }
 
-    const currentHighBid = auction.bidsHistory?.[0]?.amount || auction.startingBid || 0;
-    const minRequiredBid = currentHighBid + MIN_INCREMENT;
-
-    if (numericBid < minRequiredBid) {
-      return NextResponse.json(
-        { error: `Bid must be at least ₹${minRequiredBid.toLocaleString('en-IN')}` },
-        { status: 400 }
-      );
+    const body = await request.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
-    
-    const newBid: Bid = {
-        userId: new ObjectId(userId),
-        userName: userName,
-        amount: numericBid,
-        timestamp: new Date(),
-    };
 
-    const update: UpdateFilter<AuctionDocument> = {
-        $set: {
-          bid: `₹${numericBid.toLocaleString('en-IN')}`, 
-          currentHighBid: numericBid, 
-          topBidderId: new ObjectId(userId),
-        },
-        $inc: {
-          bids: 1, 
-        },
-        $push: { 
-          bidsHistory: {
-            $each: [newBid],
-            $position: 0, 
-          },
-        } as any, 
-    };
-    
-    const result = await auctionsCollection.findOneAndUpdate(
-      { _id: new ObjectId(id) },
-      update,
-      { returnDocument: "after" }
-    );
+    // Prevent protected fields from being overwritten
+    const { _id, createdAt, ...updates } = body;
+
+    const result = await db
+      .collection("auctions")
+      .findOneAndUpdate({ _id: oid }, { $set: updates }, { returnDocument: "after" });
 
     if (!result || !result.value) {
-        return NextResponse.json({ error: "Failed to place bid due to concurrency or update issue." }, { status: 500 });
-    }
+  return NextResponse.json({ error: "Auction not found" }, { status: 404 });
+}
 
-    const updatedAuction = result.value as AuctionDocument;
+const updated = result.value; // now TS knows it's present
+return NextResponse.json(normalizeDoc(updated), { status: 200 });
 
-    return NextResponse.json({ message: "Bid placed successfully", newBid: updatedAuction.bidsHistory?.[0] });
-
-  } catch (e) {
-    console.error("Error placing bid:", e);
-    return NextResponse.json(
-      { error: "Failed to place bid" },
-      { status: 500 }
-    );
+  } catch (err: any) {
+    console.error("PUT /api/auctions/[id] error:", err);
+    return NextResponse.json({ error: err?.message || "Server error" }, { status: 500 });
   }
 }
 
-export async function DELETE() {
-  return NextResponse.json({ error: "Method not allowed" }, { status: 405 });
+/** DELETE /api/auctions/[id] */
+export async function DELETE(
+  request: NextRequest,
+  context: { params: Promise<{ id: string }> }
+): Promise<NextResponse> {
+  try {
+    const { db } = await connectToDatabase();
+    const { id } = await context.params;
+    const oid = toObjectId(id);
+
+    if (!oid) {
+      return NextResponse.json({ error: "Invalid id parameter" }, { status: 400 });
+    }
+
+    const result = await db.collection("auctions").deleteOne({ _id: oid });
+    if (result.deletedCount === 0) {
+      return NextResponse.json({ error: "Auction not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({ success: true }, { status: 200 });
+  } catch (err: any) {
+    console.error("DELETE /api/auctions/[id] error:", err);
+    return NextResponse.json({ error: err?.message || "Server error" }, { status: 500 });
+  }
 }
