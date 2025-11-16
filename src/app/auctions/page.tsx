@@ -1,10 +1,24 @@
+// src/app/auctions/page.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react"; // <-- Added useEffect
+
+// Define a type for our auction data from MongoDB
+interface Auction {
+  _id: string; // MongoDB automatically adds this
+  title: string;
+  bid: string;
+  bids: number;
+}
 
 export default function AuctionsPage() {
   const [activeCategory, setActiveCategory] = useState("Live");
   const [activeFilter, setActiveFilter] = useState("Popular");
+
+  // --- NEW: State for storing data from the API ---
+  const [auctions, setAuctions] = useState<Auction[]>([]);
+  const [loading, setLoading] = useState(true);
+  // -----------------------------------------------
 
   const categories = [
     "Live",
@@ -19,20 +33,31 @@ export default function AuctionsPage() {
 
   const filters = ["Popular", "Highest Bids", "Newest", "Ending Soon", "Recommended"];
 
-  const auctions = [
-    { title: "Vintage Camera — Rare Edition", bid: "₹4,300", bids: 32 },
-    { title: "Signed Guitar Experience", bid: "₹3,800", bids: 12 },
-    { title: "Artist Collab Painting", bid: "₹2,420", bids: 8 },
-    { title: "VIP Meet & Greet — Celebrity X", bid: "₹12,500", bids: 44 },
-    { title: "Football Jersey (Signed)", bid: "₹5,200", bids: 19 },
-    { title: "Charity Dinner with NGO Founder", bid: "₹18,000", bids: 22 },
-  ];
+  // --- We no longer need the hardcoded 'auctions' array ---
+  // const auctions = [ ... ]; // <-- This is now gone
 
+  // We'll leave this one for now, you can move it to the DB later
   const trending = [
     { title: "Signed Guitar", bid: "₹3,800", bids: 12 },
     { title: "Vintage Art", bid: "₹4,300", bids: 32 },
     { title: "Cricket Kit (Signed)", bid: "₹2,420", bids: 8 },
   ];
+
+  // --- NEW: Fetch data from our API on component load ---
+  useEffect(() => {
+    async function getAuctions() {
+      setLoading(true);
+      // Fetches from the route.ts file we created
+      const res = await fetch("/api/auctions"); 
+      const data = await res.json();
+      
+      setAuctions(data);
+      setLoading(false);
+    }
+
+    getAuctions();
+  }, [activeCategory]); // Re-fetch if the category changes
+  // ----------------------------------------------------
 
   return (
     <div className="grid grid-cols-1 gap-10 px-10 py-10 lg:grid-cols-[2fr_0.9fr]">
@@ -82,53 +107,59 @@ export default function AuctionsPage() {
 
         {/* AUCTION GRID */}
         <div className="mt-6 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {auctions.map((auction, i) => (
-            <div
-              key={i}
-              className="rounded-xl border border-[#E8E4DD] bg-white shadow-sm p-0.5 
-              hover:-translate-y-1 hover:shadow-lg transition duration-200"
-            >
-              <div className="relative">
-                {/* LIVE TAG */}
-                <span className="absolute top-3 left-3 rounded-full bg-red-100 px-2 py-[2px] text-[11px] font-semibold text-red-600">
-                  LIVE
-                </span>
+          {/* --- NEW: Loading check and map over API data --- */}
+          {loading ? (
+            <p>Loading auctions...</p>
+          ) : (
+            auctions.map((auction) => ( // 'i' is replaced by auction._id
+              <div
+                key={auction._id} // <-- Use the unique ID from MongoDB
+                className="rounded-xl border border-[#E8E4DD] bg-white shadow-sm p-0.5 
+                hover:-translate-y-1 hover:shadow-lg transition duration-200"
+              >
+                <div className="relative">
+                  {/* LIVE TAG (we can make this dynamic later) */}
+                  <span className="absolute top-3 left-3 rounded-full bg-red-100 px-2 py-[2px] text-[11px] font-semibold text-red-600">
+                    LIVE
+                  </span>
 
-                {/* HEART ICON */}
-                <span className="absolute top-3 right-3 h-7 w-7 text-[#C8B9E8] text-xl flex items-center justify-center">
-                  ♡
-                </span>
+                  {/* HEART ICON */}
+                  <span className="absolute top-3 right-3 h-7 w-7 text-[#C8B9E8] text-xl flex items-center justify-center">
+                    ♡
+                  </span>
 
-                {/* IMAGE */}
-                <div className="h-36 w-full rounded-lg bg-gray-200"></div>
-              </div>
+                  {/* IMAGE */}
+                  <div className="h-36 w-full rounded-lg bg-gray-200"></div>
+                </div>
 
-              {/* DETAILS */}
-              <div className="px-3 py-3">
-                <h3 className="font-bold text-[14px] leading-tight">
-                  {auction.title}
-                </h3>
+                {/* DETAILS */}
+                <div className="px-3 py-3">
+                  <h3 className="font-bold text-[14px] leading-tight">
+                    {auction.title}
+                  </h3>
 
-                <div className="mt-2 flex justify-between text-sm">
-                  <div>
-                    <p className="text-xs text-gray-500">Current Bid</p>
-                    <p className="font-bold">{auction.bid}</p>
-                  </div>
+                  <div className="mt-2 flex justify-between text-sm">
+                    <div>
+                      <p className="text-xs text-gray-500">Current Bid</p>
+                      <p className="font-bold">{auction.bid}</p>
+                    </div>
 
-                  <div>
-                    <p className="text-xs text-gray-500">Bids</p>
-                    <p className="font-bold">{auction.bids}</p>
+                    <div>
+                      <p className="text-xs text-gray-500">Bids</p>
+                      <p className="font-bold">{auction.bids}</p>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
+            ))
+          )}
+          {/* ----------------------------------------------- */}
         </div>
       </div>
 
       {/* ---------------- RIGHT SIDEBAR ---------------- */}
       <div className="space-y-6">
-        {/* TRENDING AUCTIONS */}
+        {/* TRENDING AUCTIONS (still mock data) */}
         <div className="rounded-2xl bg-white p-5 shadow border border-[#E5E1DB]">
           <h3 className="flex items-center gap-1 font-bold text-lg">
             🔥 Trending Auctions
