@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link"; // Import Link
 
 interface Auction {
-  _id: string;
+  _id: string; // Ensure the ID is a string for linking
   title: string;
   bid: string;
   bids: number;
@@ -43,7 +44,7 @@ export default function AuctionsPage() {
         const res = await fetch("/api/auctions");
         if (!res.ok) throw new Error("Failed to fetch auctions");
 
-        const data = await res.json();
+        const data: Auction[] = await res.json();
         setAuctions(data);
       } catch (err) {
         console.error(err);
@@ -102,19 +103,20 @@ export default function AuctionsPage() {
           ) : error ? (
             <p className="text-red-500">{error}</p>
           ) : auctions.length === 0 ? (
-            <p>No auctions found.</p>
+            <p>No auctions found. Try creating one as a celebrity!</p>
           ) : (
             auctions.map((auction) => (
-              <div
+              <Link // <-- The component that creates the link!
+                href={`/auction/${auction._id}`} // Link to the new dynamic page
                 key={auction._id}
                 className="rounded-xl border border-[#E8E4DD] bg-white shadow-sm p-0.5 
-                hover:-translate-y-1 hover:shadow-lg transition duration-200"
+                hover:-translate-y-1 hover:shadow-lg transition duration-200 block group" 
               >
                 <div className="relative">
                   <span className="absolute top-3 left-3 rounded-full bg-red-100 px-2 py-[2px] text-[11px] font-semibold text-red-600">
                     LIVE
                   </span>
-                  <span className="absolute top-3 right-3 h-7 w-7 text-[#C8B9E8] text-xl flex items-center justify-center">
+                  <span className="absolute top-3 right-3 h-7 w-7 text-[#C8B9E8] group-hover:text-red-500 text-xl flex items-center justify-center transition">
                     ♡
                   </span>
                   <div className="h-36 w-full rounded-lg bg-gray-200"></div>
@@ -133,7 +135,7 @@ export default function AuctionsPage() {
                     </div>
                   </div>
                 </div>
-              </div>
+              </Link>
             ))
           )}
         </div>

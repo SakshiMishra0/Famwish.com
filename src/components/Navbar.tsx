@@ -59,7 +59,7 @@ export default function Navbar() {
 
         <div className="hidden gap-8 text-sm font-medium md:flex">
           <Link href="/" className="hover:text-[#4B3F72]">Home</Link>
-          <Link href="/auctions" className="hover:text-[#4B3F72]">Auctions</Link>
+          <Link href="/auction" className="hover:text-[#4B3F72]">Auctions</Link>
           <Link href="/leaderboard" className="hover:text-[#4B3F72]">Leaderboard</Link>
           <Link href="/ngos" className="hover:text-[#4B3F72]">NGOs</Link>
           {session && (
