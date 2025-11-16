@@ -77,6 +77,10 @@ export default function AuctionClient({ auctionId }: Props) {
   const [commentInput, setCommentInput] = useState('');
   const [isAutoEnabled, setIsAutoEnabled] = useState(false);
   const [message, setMessage] = useState('');
+  
+  // CRITICAL FIX: Cooldown state
+  const [cooldown, setCooldown] = useState(0); 
+
 
   // The feed items will use a unique ID for keys
   const [bidFeedItems, setBidFeedItems] = useState<any[]>([]); 
@@ -183,7 +187,10 @@ export default function AuctionClient({ auctionId }: Props) {
 
   // --- API Logic Handler: Place Bid ---
   const placeBid = async () => {
+    // FINAL FIX: Clear input here before validation, so any subsequent attempt starts fresh.
     const raw = bidAmountInput.trim();
+    setBidAmountInput(''); // Clear input IMMEDIATELY on submit
+    
     if (!raw || isNaN(Number(raw))) {
       setMessage('Enter a valid numeric bid.');
       return;
@@ -193,6 +200,7 @@ export default function AuctionClient({ auctionId }: Props) {
 
     if (val < min) {
       setMessage(`Your bid must be at least ${formatINR(min)}`);
+      // No need to fetch on validation fail, as currentBid is already correct.
       return;
     }
 
@@ -206,10 +214,17 @@ export default function AuctionClient({ auctionId }: Props) {
         const data = await response.json();
 
         if (!response.ok) {
-            // FIX: Refresh client state on bid failure (409 Conflict or Bid Too Low)
+            // CRITICAL FIX: Only show modal for actual failures (401, 500)
             if (response.status === 409 || response.status === 400) {
-                fetchAuctionDetails(); // <--- CRITICAL: Refetch the latest data!
+                
+                // --- SILENT CONFLICT RESOLUTION ---
+                fetchAuctionDetails(); // Refreshes price
+                setCooldown(8); // Pauses UI/Sim for 8s
+                // DO NOT CALL setMessage() - THIS ELIMINATES THE POPUP
+                // ------------------------------------
+                return; 
             }
+            // Show modal only for critical errors like Not Authenticated or Server Error
             setMessage(data.error || "Failed to place bid. Please log in to bid.");
             return;
         }
@@ -229,10 +244,8 @@ export default function AuctionClient({ auctionId }: Props) {
         }
         
         pushFeed(`${newBidderName} bid ${formatINR(serverHighBid)} ${newBidderName === yourUser ? '— you are the top bidder!' : ''}`, newBidderName);
-        // FIX: Corrected variable name from 'newHighBid' to 'serverHighBid'
         pushPrice(serverHighBid); 
         updateImpact(val);
-        setBidAmountInput('');
         setMessage("🎉 Bid placed successfully! You are the top bidder.");
         // --- END SUCCESSFUL BID UPDATE ---
 
@@ -295,46 +308,32 @@ export default function AuctionClient({ auctionId }: Props) {
     };
   }, [auction]);
   
-  // 3. Simulation Intervals (FIXED LOGIC to pause on user input)
-  const simulateOtherBid = useCallback(() => {
-    // FIX: Do not run simulation if the user is actively typing a bid
-    if (bidAmountInput.trim() !== '') { 
-      return;
-    }
-    
-    if (!auction) return;
-    if (Math.random() < 0.6) {
-      const incrementOptions = [50, 50, 100, 50, 20, 100];
-      const inc = incrementOptions[Math.floor(Math.random() * incrementOptions.length)];
-      const newVal = currentBid + inc;
-      const who = otherNames[Math.floor(Math.random() * otherNames.length)];
-
-      if (newVal > currentBid) {
-        setCurrentBid(newVal);
-        setBidsTotal(prev => prev + 1);
-        setTopBidder(who);
-        pushFeed(`${who} bid ${formatINR(newVal)}`, who);
-        pushPrice(newVal);
-        updateImpact(inc);
-      }
-    }
-  }, [currentBid, pushFeed, pushPrice, updateImpact, otherNames, auction, bidAmountInput]); // <-- Added bidAmountInput dependency
-  
+  // 3. Simulation Intervals (REMOVED PRICE SIMULATION, KEPT WATCHER COUNT)
   useEffect(() => {
     if (!auction) return; 
 
-    const bidInterval = setInterval(simulateOtherBid, 4000 + Math.random() * 4000);
+    // We only keep the watcher interval to show some activity
     const watcherInterval = setInterval(() => {
       setWatchers(prev => Math.max(10, prev + Math.round((Math.random() - 0.4) * 5)));
     }, 3000);
 
     return () => {
-      clearInterval(bidInterval);
       clearInterval(watcherInterval);
     };
-  }, [simulateOtherBid, auction]);
+  }, [auction]);
   
-  // 4. Auto-Bid Logic (No changes needed here)
+  // 4. Cooldown Timer for UI
+  useEffect(() => {
+    if (cooldown > 0) {
+      const timer = setTimeout(() => {
+        setCooldown(prev => prev - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [cooldown]);
+
+
+  // 5. Auto-Bid Logic (Only runs if manually enabled)
   useEffect(() => {
     if (!isAutoEnabled || topBidder === yourUser || !autoMaxInput || isNaN(Number(autoMaxInput))) return;
 
@@ -393,7 +392,7 @@ export default function AuctionClient({ auctionId }: Props) {
   // --- Main Render (using auction data) ---
   return (
     <div className="pt-4 pb-12 w-full">
-      <MessageModal message={message} onClose={() => setMessage('')} />
+      <MessageModal onClose={() => setMessage('')} message={message} />
 
       <Link href="/auction" className="flex items-center gap-2 text-lg font-bold mb-4 hover:text-[#463985] transition" style={{ color: 'var(--accent)' }}>
         <ArrowLeft size={20} /> Back to Auctions
@@ -510,29 +509,55 @@ export default function AuctionClient({ auctionId }: Props) {
             {/* BID CONTROLS (Quick-Add, Input, and Place Bid button) */}
             <div className="mt-4 pt-4 border-t border-gray-200">
                 <h4 className="font-bold mb-2">Place Your Bid:</h4>
+
+                {/* CRITICAL UI FIX: Cooldown indicator */}
+                {cooldown > 0 && (
+                    <div className="text-center bg-red-100 text-red-700 py-2 rounded-lg mb-3 text-sm font-semibold">
+                        Cooldown: Please wait {cooldown}s (Price just updated)
+                    </div>
+                )}
+
                 <div className="bid-controls flex gap-2">
-                <button className="flex-1 p-3 rounded-xl bg-gray-200 font-bold cursor-pointer transition hover:bg-gray-300" onClick={() => quickAdd(10)}>+ ₹10</button>
-                <button className="flex-1 p-3 rounded-xl bg-gray-200 font-bold cursor-pointer transition hover:bg-gray-300" onClick={() => quickAdd(50)}>+ ₹50</button>
-                <button className="flex-1 p-3 rounded-xl bg-gray-200 font-bold cursor-pointer transition hover:bg-gray-300" onClick={() => quickAdd(100)}>+ ₹100</button>
+                <button 
+                    className="flex-1 p-3 rounded-xl bg-gray-200 font-bold cursor-pointer transition hover:bg-gray-300 disabled:bg-gray-400" 
+                    onClick={() => quickAdd(10)}
+                    disabled={cooldown > 0} // Disable during cooldown
+                >
+                    + ₹10
+                </button>
+                <button 
+                    className="flex-1 p-3 rounded-xl bg-gray-200 font-bold cursor-pointer transition hover:bg-gray-300 disabled:bg-gray-400" 
+                    onClick={() => quickAdd(50)}
+                    disabled={cooldown > 0} // Disable during cooldown
+                >
+                    + ₹50
+                </button>
+                <button 
+                    className="flex-1 p-3 rounded-xl bg-gray-200 font-bold cursor-pointer transition hover:bg-gray-300 disabled:bg-gray-400" 
+                    onClick={() => quickAdd(100)}
+                    disabled={cooldown > 0} // Disable during cooldown
+                >
+                    + ₹100
+                </button>
                 </div>
 
                 <input
                 id="bidAmount"
-                className="w-full p-3 rounded-xl border mt-3 text-base focus:ring-2 focus:ring-[#463985] focus:border-[#463985]"
-                // IMPORTANT: Displaying the minimum bid required
+                className="w-full p-3 rounded-xl border mt-3 text-base focus:ring-2 focus:ring-[#463985] focus:border-[#463985] disabled:bg-gray-50"
                 placeholder={`Enter your bid (min ${formatINR(minBidForUI)})`} 
                 value={bidAmountInput}
                 onChange={(e) => setBidAmountInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && placeBid()}
+                disabled={cooldown > 0} // Disable during cooldown
                 />
 
                 <button
                 type="button" 
                 className="w-full py-4 rounded-xl text-[#1E1635] font-extrabold transition disabled:bg-gray-400 bg-[#F4C15D] hover:bg-[#e4b24e]" 
                 onClick={placeBid}
-                disabled={!bidAmountInput.trim() || isNaN(Number(bidAmountInput.trim()))}
+                disabled={!bidAmountInput.trim() || isNaN(Number(bidAmountInput.trim())) || cooldown > 0} // Disable during cooldown
                 >
-                <Zap size={20} className="inline-block mr-2" /> Place Bid
+                <Zap size={20} className="inline-block mr-2" /> {cooldown > 0 ? `Wait ${cooldown}s...` : 'Place Bid'}
                 </button>
             </div>
             {/* Auto-Bid Settings */}
