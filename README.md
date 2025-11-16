@@ -5,6 +5,7 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 MONGODB_URI=mongodb://localhost:27017
 NEXTAUTH_SECRET=thiscanbeanything
 NEXTAUTH_URL=http://localhost:3000
+MONGODB_DB="famwish"
 
 ## Getting Started
 
