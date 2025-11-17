@@ -12,8 +12,12 @@ export interface NgoPost {
   ngoName: string;
   title: string;
   content: string;
-  // --- MODIFIED ---
-  mediaUrls: string[]; // Change to array
-  // ----------------
+  mediaUrls: string[]; 
   createdAt: string;
+  likesCount: number;
+  commentsCount: number; 
+  isLiked: boolean; 
+  // --- NEW FIELD ---
+  ngoProfilePicture: string | null;
+  // -----------------
 }

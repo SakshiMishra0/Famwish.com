@@ -5,17 +5,12 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import clientPromise from "@/lib/mongodb";
 import { ObjectId, Db, MongoClient } from "mongodb";
 
-// --- CONNECTION CACHING ---
+// --- Connection Helper (copied from other API routes) ---
 let cached: { client: MongoClient; db: Db } | undefined;
-
 async function connectToDatabase(): Promise<{ client: MongoClient; db: Db }> {
-  if (cached) {
-    return cached;
-  }
+  if (cached) return cached;
   const uri = process.env.MONGODB_URI || process.env.MONGODB_URL;
-  if (!uri) {
-    throw new Error("MONGODB_URI environment variable is not set.");
-  }
+  if (!uri) throw new Error("MONGODB_URI environment variable is not set.");
   const client = new MongoClient(uri);
   await client.connect();
   const dbName = process.env.MONGODB_DB || "famwish";
@@ -23,42 +18,108 @@ async function connectToDatabase(): Promise<{ client: MongoClient; db: Db }> {
   cached = { client, db };
   return cached;
 }
-
-/**
- * Safely convert string id to ObjectId. Returns null if invalid.
- */
 function toObjectId(id?: string): ObjectId | null {
   if (!id) return null;
-  try {
-    return new ObjectId(id);
-  } catch {
-    return null;
-  }
+  try { return new ObjectId(id); } catch { return null; }
 }
+
 
 /**
  * GET /api/ngo/posts
- * Fetches all NGO posts, optionally filtered by ngoId.
+ * Fetches all NGO posts, optionally filtered by ngoId, and enriches with stats (likes, comments, profile pic).
  */
 export async function GET(request: NextRequest) {
+  const session = await getServerSession(authOptions);
+  let userOid: ObjectId | null = null;
+  if (session && session.user) {
+      userOid = toObjectId((session.user as { id: string }).id);
+  }
+  
   try {
     const { db } = await connectToDatabase();
     const { searchParams } = new URL(request.url);
     const ngoId = searchParams.get("ngoId");
     
-    const query: { ngoId?: ObjectId } = {};
+    const initialQuery: { ngoId?: ObjectId } = {};
     if (ngoId) {
         try {
-            query.ngoId = new ObjectId(ngoId);
+            initialQuery.ngoId = new ObjectId(ngoId);
         } catch (e) {
             return NextResponse.json({ error: "Invalid NGO ID" }, { status: 400 });
         }
     }
 
     const posts = await db.collection("ngo_posts")
-      .find(query)
-      .sort({ createdAt: -1 }) // Newest first
-      .limit(50)
+      .aggregate([
+          { $match: initialQuery },
+          { $sort: { createdAt: -1 } },
+          { $limit: 50 },
+          
+          // 1. Join with users collection to get NGO Profile Picture
+          {
+              $lookup: {
+                  from: "users",
+                  localField: "ngoId", 
+                  foreignField: "_id", 
+                  as: "ngoDetails"
+              }
+          },
+          // 2. Deconstruct ngoDetails
+          { $unwind: { path: "$ngoDetails", preserveNullAndEmptyArrays: true } },
+          
+          // 3. --- FIX: Intermediate Project Stage to discard large user fields ---
+          {
+              $project: {
+                  // Keep all existing fields (1)
+                  _id: 1,
+                  ngoId: 1,
+                  ngoName: 1,
+                  title: 1,
+                  content: 1,
+                  mediaUrls: 1,
+                  createdAt: 1,
+                  likesCount: 1,
+                  likedBy: 1, // Keep for final isLiked calculation
+                  commentsCount: 1, // Keep if already initialized
+                  
+                  // Extract only the profile picture and discard the rest of the ngoDetails object
+                  ngoProfilePicture: { $ifNull: ["$ngoDetails.profilePicture", null] },
+                  
+                  // Explicitly exclude the entire bulky ngoDetails array/object
+                  ngoDetails: 0, 
+              }
+          },
+          // ---------------------------------------------------------------------
+
+          // 4. LEFT JOIN to get comments count (references the minimized document)
+          {
+              $lookup: {
+                  from: "ngo_post_comments", 
+                  localField: "_id",
+                  foreignField: "postId", 
+                  as: "comments"
+              }
+          },
+          
+          // 5. Final PROJECT stage
+          {
+              $project: {
+                  _id: 1,
+                  ngoId: 1,
+                  ngoName: 1,
+                  title: 1,
+                  content: 1,
+                  mediaUrls: 1,
+                  createdAt: 1,
+                  likesCount: { $ifNull: ["$likesCount", 0] },
+                  commentsCount: { $size: "$comments" },
+                  isLiked: {
+                      $in: [userOid, { $ifNull: ["$likedBy", []] }]
+                  },
+                  ngoProfilePicture: 1 
+              }
+          }
+      ])
       .toArray();
 
     // Serialize ObjectIds for JSON response
@@ -67,20 +128,23 @@ export async function GET(request: NextRequest) {
         _id: post._id.toString(),
         ngoId: post.ngoId.toString(),
         createdAt: post.createdAt.toISOString(),
-        // --- IMPORTANT: Ensure mediaUrls defaults to an array
         mediaUrls: post.mediaUrls || [], 
+        ngoProfilePicture: post.ngoProfilePicture || null,
     }));
 
     return NextResponse.json(formattedPosts, { status: 200 });
   } catch (err) {
-    console.error("GET /api/ngo/posts error:", err);
-    return NextResponse.json({ error: "Failed to fetch posts" }, { status: 500 });
+    console.error("CRITICAL: Failed to run NGO posts aggregation pipeline:", err);
+    return NextResponse.json({ 
+        error: "Failed to fetch NGO posts (check console for server error details).",
+        detail: err instanceof Error ? err.message : "Unknown database error"
+    }, { status: 500 });
   }
 }
 
 /**
  * POST /api/ngo/posts
- * Creates a new NGO post. Must be an authenticated user with role 'ngo'.
+ * (Remains unchanged)
  */
 export async function POST(request: NextRequest) {
   const session = await getServerSession(authOptions);
@@ -91,7 +155,6 @@ export async function POST(request: NextRequest) {
 
   try {
     const { db } = await connectToDatabase();
-    // --- MODIFIED: Expect mediaUrls instead of mediaUrl
     const { title, content, mediaUrls } = await request.json();
 
     if (!content || content.trim().length === 0) {
@@ -108,7 +171,9 @@ export async function POST(request: NextRequest) {
       ngoName: ngoName,
       title: title || null,
       content: content.trim(),
-      mediaUrls: mediaUrls || [], // --- MODIFIED: Store the array
+      mediaUrls: mediaUrls || [],
+      likesCount: 0,
+      likedBy: [],
       createdAt: new Date(),
     };
 
