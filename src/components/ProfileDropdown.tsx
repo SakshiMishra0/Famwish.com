@@ -1,17 +1,31 @@
+// src/components/ProfileDropdown.tsx
 "use client";
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { LogOut, User, ChevronDown } from "lucide-react";
+import UserAvatar from "./UserAvatar"; 
 
 interface Props {
   userName: string;
   userRole?: string;
-  profilePictureUrl: string | null; // <-- ADDED: new prop
 }
 
-export default function ProfileDropdown({ userName, userRole, profilePictureUrl }: Props) { // <-- CHANGED: accept new prop
+// NEW helper component for the dropdown header, showing avatar + name/role side-by-side
+const DropdownHeader = ({ userName, userRole }: Props) => (
+  <div className="flex items-center gap-3 px-3 py-2 border-b mb-2">
+    {/* Use UserAvatar for the image. It handles fetching. */}
+    <UserAvatar size="small" /> 
+    <div>
+        <p className="font-semibold text-sm text-[#22163F] truncate">{userName}</p>
+        {userRole && <p className="text-xs text-gray-500 capitalize">{userRole}</p>}
+    </div>
+  </div>
+);
+
+
+export default function ProfileDropdown({ userName, userRole }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -37,50 +51,29 @@ export default function ProfileDropdown({ userName, userRole, profilePictureUrl 
 
   const menuItems = [
     { label: "My Profile", href: "/profile/me", icon: User },
-    // You can add more links here later, like settings or dashboard
   ];
-
-  const Avatar = () => { // <-- NEW Avatar Component
-    if (profilePictureUrl) {
-        return (
-            <img 
-                src={profilePictureUrl} 
-                alt={`${userName}'s profile`} 
-                className="h-8 w-8 rounded-full object-cover flex-shrink-0" 
-            />
-        );
-    }
-    // Fallback to initials
-    return (
-        <div className="h-8 w-8 rounded-full bg-gradient-to-br from-[#F4C15D] to-[#D9A441] text-white flex items-center justify-center font-bold text-sm flex-shrink-0">
-            {userName.charAt(0).toUpperCase()}
-        </div>
-    );
-  };
 
 
   return (
     <div className="relative" ref={dropdownRef}>
-      {/* Avatar Button */}
+      {/* Avatar Button (Closed State: ONLY PIC) */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 rounded-full p-1 transition bg-white border border-[#E6E3DD] hover:border-[#2F235A]"
+        // MODIFIED: Removed 'gap-2' and tightened padding to frame just the avatar
+        className="flex items-center p-0.5 rounded-full transition bg-white border border-[#E6E3DD] hover:border-[#2F235A]"
         aria-expanded={isOpen}
         aria-label="User Profile Menu"
       >
-        <Avatar /> {/* <-- USE Avatar COMPONENT */}
-        <ChevronDown size={14} className={`text-[#2F235A] transition-transform ${isOpen ? 'rotate-180' : 'rotate-0'}`} />
+        <UserAvatar size="small" /> 
+        {/* Removed ChevronDown from here, as requested */}
       </button>
 
       {/* Dropdown Menu */}
       {isOpen && (
         <div className="absolute right-0 top-11 z-50 w-56 rounded-xl bg-white p-2 shadow-xl border border-gray-100 animate-slideUp">
           
-          {/* User Info */}
-          <div className="px-3 py-2 border-b mb-2">
-            <p className="font-semibold text-sm text-[#22163F] truncate">{userName}</p>
-            {userRole && <p className="text-xs text-gray-500 capitalize">{userRole}</p>}
-          </div>
+          {/* User Info with Avatar/Name Side-by-Side (NEW HEADER) */}
+          <DropdownHeader userName={userName} userRole={userRole} />
 
           {/* Navigation Links */}
           {menuItems.map((item) => (

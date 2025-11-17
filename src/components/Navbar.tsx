@@ -105,7 +105,7 @@ export default function Navbar() {
               <ProfileDropdown 
                 userName={user?.name as string}
                 userRole={user?.role}
-                profilePictureUrl={user?.image as string | null}
+                // profilePictureUrl={user?.image as string | null} // <-- REMOVED
               />
 
             </>

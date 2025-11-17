@@ -25,31 +25,43 @@ interface AuctionDocument extends Document {
 
 /**
  * GET: Fetch a list of all auctions for the main auction page.
- * NOW UPDATED to handle search queries and return image.
+ * NOW UPDATED to handle search queries AND createdBy user ID filter.
  */
-export async function GET(request: NextRequest) {
+export async function GET(request: NextRequest) { 
   try {
     const client = await clientPromise;
     const db = client.db(DATABASE_NAME);
 
-    // 3. Check for a search query in the URL
     const { searchParams } = new URL(request.url);
     const searchQuery = searchParams.get("search");
+    const createdBy = searchParams.get("createdBy"); // <--- ADDED: Get createdBy filter
 
     // 4. Build the MongoDB query
     const query: Document = {};
+    
+    // --- START: Filtering Logic ---
     if (searchQuery) {
       query.$or = [
-        { title: { $regex: searchQuery, $options: "i" } },
-        { description: { $regex: searchQuery, $options: "i" } },
-        { category: { $regex: searchQuery, $options: "i" } }
+        { title: { $regex: searchQuery, $options: "i" } }, 
+        { description: { $regex: searchQuery, $options: "i" } }, 
+        { category: { $regex: searchQuery, $options: "i" } } 
       ];
     }
+
+    if (createdBy) { // <--- ADDED: Filter by createdBy if provided
+        try {
+            query.createdBy = new ObjectId(createdBy);
+        } catch (e) {
+            // In a real app, this should log an error, but here we return a 400
+            return NextResponse.json({ error: "Invalid createdBy user ID" }, { status: 400 });
+        }
+    }
+    // --- END: Filtering Logic ---
 
     // 5. Use the query in the .find() method
     const auctions = await db
       .collection("auctions")
-      .find(query)
+      .find(query) 
       .project({
         _id: 1,
         title: 1,
@@ -57,7 +69,8 @@ export async function GET(request: NextRequest) {
         bids: 1,
         currentHighBid: 1,
         endDate: 1,
-        titleImage: 1, // <--- ADDED: Fetch the image data
+        titleImage: 1, 
+        createdAt: 1, // <--- ADDED: Include creation date to determine status
       })
       .sort({ createdAt: -1 })
       .toArray();
@@ -65,6 +78,7 @@ export async function GET(request: NextRequest) {
     const formattedAuctions = auctions.map((auction) => ({
       ...auction,
       _id: auction._id.toString(),
+      createdBy: auction.createdBy?.toString(),
     }));
 
     return NextResponse.json(formattedAuctions, { status: 200 });
@@ -79,6 +93,7 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST: Create a new auction.
+ * (Logic remains unchanged)
  */
 export async function POST(request: Request) {
     const session = await getServerSession(authOptions);
@@ -100,7 +115,7 @@ export async function POST(request: Request) {
         }
         
         const client = await clientPromise;
-        const db = client.db(DATABASE_NAME);
+        const db = client.db(process.env.MONGODB_DB);
         const userId = new ObjectId((session.user as { id: string }).id);
         
         const newAuction: AuctionDocument = {
