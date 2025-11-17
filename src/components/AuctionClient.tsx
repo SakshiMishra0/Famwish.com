@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
+import { useSession } from "next-auth/react"; // 1. Import useSession
 import {
   Chart,
   LineController,
@@ -19,6 +20,7 @@ Chart.register(LineController, LineElement, PointElement, CategoryScale, LinearS
 
 // --- Component for non-blocking UI messages (replaces alert) ---
 const MessageModal = ({ message, onClose }: { message: string; onClose: () => void }) => {
+  // (Component unchanged)
   if (!message) return null;
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
@@ -49,7 +51,7 @@ interface AuctionDetails {
     topBidderId?: string;
     endDate: string;
     bidsHistory: BidHistoryItem[];
-    isWishlisted: boolean;
+    // isWishlisted: boolean; // This was a placeholder, we'll manage it with state
 }
 
 interface Props {
@@ -58,12 +60,14 @@ interface Props {
 
 // --- Main Client Component ---
 export default function AuctionClient({ auctionId }: Props) {
+  const { data: session } = useSession(); // 2. Get user session
+
   // State for Fetched Data and Loading
   const [auction, setAuction] = useState<AuctionDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState('');
 
-  // UI State (synced with fetched data)
+  // UI State
   const [currentBid, setCurrentBid] = useState(0);
   const [bidsTotal, setBidsTotal] = useState(0);
   const [watchers, setWatchers] = useState(143);
@@ -78,11 +82,13 @@ export default function AuctionClient({ auctionId }: Props) {
   const [isAutoEnabled, setIsAutoEnabled] = useState(false);
   const [message, setMessage] = useState('');
   
+  // 3. Add state for wishlist
+  const [isWishlisted, setIsWishlisted] = useState(false);
+  
   // CRITICAL FIX: Cooldown state
   const [cooldown, setCooldown] = useState(0); 
 
-
-  // The feed items will use a unique ID for keys
+  // (rest of state definitions are unchanged)
   const [bidFeedItems, setBidFeedItems] = useState<any[]>([]); 
   const [comments, setComments] = useState([
     { id: 1, name: 'Riya', time: '5m ago', text: "This artwork looks beautiful! Can't wait to see who wins." },
@@ -90,15 +96,14 @@ export default function AuctionClient({ auctionId }: Props) {
 
   const chartCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const chartInstanceRef = useRef<Chart | null>(null);
-  const yourUser = 'You'; // Assuming the logged-in user name is 'You' for local simulation/tracking
+  const yourUser = 'You';
   const otherNames = ['Riya', 'Aarav', 'Gagan', 'Neha', 'Priyanshu', 'Kabir', 'Rohit'];
 
-  // --- Helpers ---
+  // --- Helpers (unchanged) ---
   const formatINR = (n: number) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
   const pushFeed = useCallback((text: string, bidder: string = 'System') => {
     setBidFeedItems(prev => {
-      // Use Date.now() for a unique ID for simulation items
       const newItem = { id: Date.now(), text, bidder }; 
       return [newItem, ...prev.slice(0, 39)]; 
     });
@@ -125,15 +130,12 @@ export default function AuctionClient({ auctionId }: Props) {
   }, []);
 
   const quickAdd = (amount: number) => {
-    // Add amount to the current bid price
     setBidAmountInput(String(currentBid + amount)); 
   };
   
   const postComment = () => {
     const txt = commentInput.trim();
     if (!txt) return;
-
-    // Use a unique ID for comments as well
     setComments(prev => [
       { id: Date.now(), name: yourUser, time: 'just now', text: txt },
       ...prev,
@@ -141,13 +143,15 @@ export default function AuctionClient({ auctionId }: Props) {
     setCommentInput('');
   };
   
-  // --- START fetchAuctionDetails function (CRITICAL FOR PRICE REFRESH) ---
+  // --- 4. Update fetchAuctionDetails ---
   const fetchAuctionDetails = useCallback(async () => {
     try {
       setLoading(true);
+      // Fetch auction data
       const res = await fetch(`/api/auctions/${auctionId}`);
       
       if (!res.ok) {
+        // (error handling unchanged)
         try {
           const errorData = await res.json();
           throw new Error(errorData.error || `Server responded with status ${res.status}`);
@@ -159,14 +163,11 @@ export default function AuctionClient({ auctionId }: Props) {
       const data: AuctionDetails = await res.json();
       setAuction(data);
 
-      // Map fetched data to UI state
+      // (rest of state mapping unchanged)
       const highBid = data.currentHighBid || data.startingBid || 0;
       setCurrentBid(highBid);
       setBidsTotal(data.bids);
-      
-      // Populate bid feed from history
       const initialFeed = data.bidsHistory.map((bid: BidHistoryItem, index: number) => ({
-          // FIXED: Use timestamp + index for a unique key from fetched data
           id: bid.timestamp + index, 
           text: `${bid.userName} bid ${formatINR(bid.amount)}`,
           bidder: bid.userName,
@@ -176,109 +177,116 @@ export default function AuctionClient({ auctionId }: Props) {
       setTopBidder(data.bidsHistory?.[data.bidsHistory.length - 1]?.userName || 'N/A'); 
       setImpactRaised(highBid * 5 + 10000); 
 
+      // 5. AFTER fetching auction, fetch wishlist if logged in
+      if (session) {
+        const wishlistRes = await fetch("/api/wishlist");
+        if (wishlistRes.ok) {
+          const wishlistData = await wishlistRes.json();
+          const userWishlistIds = new Set(wishlistData.map((item: any) => item.auctionId));
+          // Set the wishlist state for this specific auction
+          setIsWishlisted(userWishlistIds.has(auctionId));
+        }
+      }
+
     } catch (err: any) {
       setFetchError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [auctionId]); 
-  // --- END fetchAuctionDetails function ---
+  }, [auctionId, session]); // 6. Add session as a dependency
 
-
-  // --- API Logic Handler: Place Bid ---
+  // --- API Logic Handler: Place Bid (unchanged) ---
   const placeBid = async () => {
-    // FINAL FIX: Clear input here before validation, so any subsequent attempt starts fresh.
     const raw = bidAmountInput.trim();
-    setBidAmountInput(''); // Clear input IMMEDIATELY on submit
-    
+    setBidAmountInput('');
     if (!raw || isNaN(Number(raw))) {
       setMessage('Enter a valid numeric bid.');
       return;
     }
     const val = parseInt(raw, 10);
     const min = currentBid + 50;
-
     if (val < min) {
       setMessage(`Your bid must be at least ${formatINR(min)}`);
-      // No need to fetch on validation fail, as currentBid is already correct.
       return;
     }
-
     try {
         const response = await fetch(`/api/auctions/${auctionId}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ bidAmount: val }),
         });
-
         const data = await response.json();
-
         if (!response.ok) {
-            // CRITICAL FIX: Only show modal for actual failures (401, 500)
             if (response.status === 409 || response.status === 400) {
-                
-                // --- SILENT CONFLICT RESOLUTION ---
-                fetchAuctionDetails(); // Refreshes price
-                setCooldown(8); // Pauses UI/Sim for 8s
-                // DO NOT CALL setMessage() - THIS ELIMINATES THE POPUP
-                // ------------------------------------
+                fetchAuctionDetails(); 
+                setCooldown(8);
                 return; 
             }
-            // Show modal only for critical errors like Not Authenticated or Server Error
             setMessage(data.error || "Failed to place bid. Please log in to bid.");
             return;
         }
-        
-        // --- START SUCCESSFUL BID UPDATE ---
         const serverHighBid = data.auction?.currentHighBid; 
         const newBidderName = data.newBid?.userName || yourUser;
-        
         setCurrentBid(serverHighBid);
         setBidsTotal(data.auction?.bids);
         setTopBidder(newBidderName); 
-        
-        // Update user-specific tracking
         if (newBidderName === yourUser) {
           setYourBidsCount(prev => prev + 1);
           setYourTotalBid(serverHighBid);
         }
-        
         pushFeed(`${newBidderName} bid ${formatINR(serverHighBid)} ${newBidderName === yourUser ? '— you are the top bidder!' : ''}`, newBidderName);
         pushPrice(serverHighBid); 
         updateImpact(val);
         setMessage("🎉 Bid placed successfully! You are the top bidder.");
-        // --- END SUCCESSFUL BID UPDATE ---
-
     } catch (e) {
         setMessage("Network error. Could not place bid.");
     }
   };
 
+  // 7. Add Wishlist Toggle Handler
+  const handleWishlistToggle = useCallback(async () => {
+    if (!session) {
+      alert("Please log in to add items to your wishlist.");
+      return;
+    }
+
+    const currentWishlistStatus = isWishlisted;
+    // Optimistic UI update
+    setIsWishlisted(!currentWishlistStatus);
+
+    // Call the API
+    try {
+      await fetch("/api/wishlist", {
+        method: currentWishlistStatus ? "DELETE" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ auctionId: auctionId }),
+      });
+    } catch (err) {
+      console.error("Failed to update wishlist:", err);
+      // Rollback UI on error
+      setIsWishlisted(currentWishlistStatus);
+    }
+  }, [isWishlisted, session, auctionId]);
 
   // --- Effects ---
 
-  // 1. Initial Data Fetch 
+  // 1. Initial Data Fetch (dependency list updated)
   useEffect(() => {
     fetchAuctionDetails(); 
   }, [fetchAuctionDetails]); 
 
-  // 2. Chart Initialization and Update (No changes needed here)
+  // (Rest of useEffects are unchanged)
+  // 2. Chart Initialization and Update
   useEffect(() => {
     if (chartCanvasRef.current && auction) {
         if (chartInstanceRef.current) {
             chartInstanceRef.current.destroy(); 
         }
-        
         const ctx = chartCanvasRef.current.getContext('2d');
         if (!ctx) return;
-
-        // Use only the last 12 bids for the chart initial state
         const prices = auction.bidsHistory.map(b => b.amount);
-        const labels = prices.map((_, i) => `${i + 1}m`); 
-        
         let initialPrices = prices.slice(-12);
         let initialLabels = prices.slice(-12).map((_, i) => `${prices.length - initialPrices.length + i + 1}m`);
-
         chartInstanceRef.current = new Chart(ctx, {
             type: 'line',
             data: {
@@ -301,22 +309,18 @@ export default function AuctionClient({ auctionId }: Props) {
             }
         });
     }
-
     return () => {
         chartInstanceRef.current?.destroy();
         chartInstanceRef.current = null;
     };
   }, [auction]);
   
-  // 3. Simulation Intervals (REMOVED PRICE SIMULATION, KEPT WATCHER COUNT)
+  // 3. Simulation Intervals
   useEffect(() => {
     if (!auction) return; 
-
-    // We only keep the watcher interval to show some activity
     const watcherInterval = setInterval(() => {
       setWatchers(prev => Math.max(10, prev + Math.round((Math.random() - 0.4) * 5)));
     }, 3000);
-
     return () => {
       clearInterval(watcherInterval);
     };
@@ -332,17 +336,13 @@ export default function AuctionClient({ auctionId }: Props) {
     }
   }, [cooldown]);
 
-
-  // 5. Auto-Bid Logic (Only runs if manually enabled)
+  // 5. Auto-Bid Logic
   useEffect(() => {
     if (!isAutoEnabled || topBidder === yourUser || !autoMaxInput || isNaN(Number(autoMaxInput))) return;
-
     const maxBid = parseInt(autoMaxInput, 10);
     const minBid = currentBid + 50;
-
     if (currentBid >= yourTotalBid && currentBid < maxBid) {
       const newBid = Math.min(maxBid, minBid); 
-      
       const timeout = setTimeout(() => {
         setCurrentBid(newBid);
         setBidsTotal(prev => prev + 1);
@@ -353,17 +353,15 @@ export default function AuctionClient({ auctionId }: Props) {
         pushPrice(newBid);
         updateImpact(newBid);
       }, 1000); 
-
       return () => clearTimeout(timeout);
     }
   }, [isAutoEnabled, topBidder, currentBid, yourTotalBid, autoMaxInput, pushFeed, pushPrice, updateImpact, yourUser]);
 
 
-  // Derived UI State
+  // Derived UI State (unchanged)
   const heatScore = (auction && bidsTotal) ? Math.min(100, Math.max(20, Math.round(bidsTotal * 2.5 + watchers * 0.1))) : 50; 
   const isTopBidder = topBidder === yourUser;
   const bidDiff = currentBid - yourTotalBid;
-
   const yourPositionContent = isTopBidder ? {
     rank: '#1',
     meta: `Top bidder • ${yourBidsCount} bids`,
@@ -373,8 +371,6 @@ export default function AuctionClient({ auctionId }: Props) {
     meta: `Outbid by ${formatINR(bidDiff > 0 ? bidDiff : 50)} • ${yourBidsCount} bids`,
     top: topBidder,
   };
-
-  // --- Calculate Minimum Bid for UI ---
   const minBidForUI = currentBid + 50;
 
 
@@ -409,30 +405,30 @@ export default function AuctionClient({ auctionId }: Props) {
             <span className="text-white px-3 py-1 rounded-xl font-extrabold text-sm flex items-center gap-1" style={{ background: '#FF4A4A' }}>
               <Clock size={16} /> LIVE
             </span>
-            <button className={`text-gray-400 hover:text-red-500 transition ${auction.isWishlisted ? 'text-red-500' : ''}`}>
-                <Heart size={24} fill={auction.isWishlisted ? 'currentColor' : 'none'} />
+            {/* 8. Wire up the Wishlist Button */}
+            <button 
+              onClick={handleWishlistToggle}
+              className={`text-gray-400 hover:text-red-500 transition ${isWishlisted ? 'text-red-500' : ''}`}
+            >
+                <Heart size={24} fill={isWishlisted ? 'currentColor' : 'none'} />
             </button>
           </div>
 
           <h1 className="text-3xl font-extrabold mt-3 mb-4" style={{ color: 'var(--accent)' }}>{auction.title}</h1>
 
+          {/* (Rest of JSX is unchanged) */}
           <div className="big-img h-80 w-full rounded-2xl animate-fadeIn" style={{ background: 'linear-gradient(90deg,#efefef,#e6e6e6)' }} />
-
           <div className="flex justify-between items-center mt-4 text-sm" style={{ color: 'var(--muted)' }}>
             <div>
               <div className="text-sm">Current Bid</div>
               <div className="text-4xl font-extrabold mt-1" style={{ color: '#111' }}>{formatINR(currentBid)}</div>
             </div>
-
             <div className="text-right">
               <div className="text-sm text-gray-700 font-semibold">{bidsTotal} total bids</div>
               <div className="text-xs text-gray-500">{watchers} watching</div>
             </div>
           </div>
-          
-          {/* Auction Description */}
           <p className="mt-4 text-gray-700 leading-relaxed">{auction.description}</p>
-
           <div className="mt-4 p-4 rounded-xl border border-yellow-200 bg-yellow-50 text-sm" style={{ color: 'var(--muted)', lineHeight: '1.45' }}>
             <strong className="text-yellow-700">Impact:</strong> This auction supports <b>Education For All NGO</b>. <span id="impactLine">Your bid helps provide books to underprivileged girls.</span>
             <div className="mt-2 text-xs">
@@ -441,14 +437,11 @@ export default function AuctionClient({ auctionId }: Props) {
                 <strong>Ends:</strong> {new Date(auction.endDate).toLocaleString()}
             </div>
           </div>
-
-          {/* Comments Section */}
           <div className="comments mt-8">
             <div className="flex justify-between items-center">
               <h3 className="text-xl font-bold" style={{ color: 'var(--accent)' }}>Comments</h3>
               <div className="text-sm" style={{ color: 'var(--muted)' }}>{comments.length} comments</div>
             </div>
-
             <div className="mt-4 rounded-xl p-4 border shadow-md bg-gray-50">
               <div className="comment-list max-h-72 overflow-y-auto flex flex-col gap-3 pr-2">
                 {comments.map(c => (
@@ -461,7 +454,6 @@ export default function AuctionClient({ auctionId }: Props) {
                   </div>
                 ))}
               </div>
-
               <div className="w-full mt-4">
                 <textarea
                   className="w-full p-3 rounded-lg border text-sm focus:ring focus:ring-[#463985] focus:border-[#463985] min-h-[70px]"
@@ -488,15 +480,10 @@ export default function AuctionClient({ auctionId }: Props) {
            RIGHT COLUMN: Live Bidding + Analytics 
            ===================================================================== */}
         <div className="mt-6 lg:mt-0"> 
-          
-          {/* BIDDING CONTROLS CARD (NOT sticky) */}
           <div className="card bg-white p-6 rounded-2xl shadow-xl border border-gray-100 mb-5">
             <h3 className="text-xl font-bold" style={{ color: 'var(--accent)', margin: '0 0 12px' }}>Live Bid Feed</h3>
-            
-            {/* Live Feed Items */}
             <div className="feed max-h-[280px] overflow-y-auto flex flex-col gap-2 pr-2">
               {bidFeedItems.map((item, index) => (
-                // FIX: Use item.id (which is timestamp + index) for the key
                 <div key={item.id} className="bg-gray-50 p-3 rounded-lg text-sm border border-gray-200 flex justify-between items-center">
                     <div className="font-medium flex items-center gap-2">
                         {item.bidder === yourUser ? <Hand size={16} className="text-green-500" /> : <Hand size={16} className="text-blue-500" />}
@@ -505,42 +492,36 @@ export default function AuctionClient({ auctionId }: Props) {
                 </div>
               ))}
             </div>
-
-            {/* BID CONTROLS (Quick-Add, Input, and Place Bid button) */}
             <div className="mt-4 pt-4 border-t border-gray-200">
                 <h4 className="font-bold mb-2">Place Your Bid:</h4>
-
-                {/* CRITICAL UI FIX: Cooldown indicator */}
                 {cooldown > 0 && (
                     <div className="text-center bg-red-100 text-red-700 py-2 rounded-lg mb-3 text-sm font-semibold">
                         Cooldown: Please wait {cooldown}s (Price just updated)
                     </div>
                 )}
-
                 <div className="bid-controls flex gap-2">
                 <button 
                     className="flex-1 p-3 rounded-xl bg-gray-200 font-bold cursor-pointer transition hover:bg-gray-300 disabled:bg-gray-400" 
                     onClick={() => quickAdd(10)}
-                    disabled={cooldown > 0} // Disable during cooldown
+                    disabled={cooldown > 0}
                 >
                     + ₹10
                 </button>
                 <button 
                     className="flex-1 p-3 rounded-xl bg-gray-200 font-bold cursor-pointer transition hover:bg-gray-300 disabled:bg-gray-400" 
                     onClick={() => quickAdd(50)}
-                    disabled={cooldown > 0} // Disable during cooldown
+                    disabled={cooldown > 0}
                 >
                     + ₹50
                 </button>
                 <button 
                     className="flex-1 p-3 rounded-xl bg-gray-200 font-bold cursor-pointer transition hover:bg-gray-300 disabled:bg-gray-400" 
                     onClick={() => quickAdd(100)}
-                    disabled={cooldown > 0} // Disable during cooldown
+                    disabled={cooldown > 0}
                 >
                     + ₹100
                 </button>
                 </div>
-
                 <input
                 id="bidAmount"
                 className="w-full p-3 rounded-xl border mt-3 text-base focus:ring-2 focus:ring-[#463985] focus:border-[#463985] disabled:bg-gray-50"
@@ -548,19 +529,17 @@ export default function AuctionClient({ auctionId }: Props) {
                 value={bidAmountInput}
                 onChange={(e) => setBidAmountInput(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && placeBid()}
-                disabled={cooldown > 0} // Disable during cooldown
+                disabled={cooldown > 0}
                 />
-
                 <button
                 type="button" 
                 className="w-full py-4 rounded-xl text-[#1E1635] font-extrabold transition disabled:bg-gray-400 bg-[#F4C15D] hover:bg-[#e4b24e]" 
                 onClick={placeBid}
-                disabled={!bidAmountInput.trim() || isNaN(Number(bidAmountInput.trim())) || cooldown > 0} // Disable during cooldown
+                disabled={!bidAmountInput.trim() || isNaN(Number(bidAmountInput.trim())) || cooldown > 0}
                 >
                 <Zap size={20} className="inline-block mr-2" /> {cooldown > 0 ? `Wait ${cooldown}s...` : 'Place Bid'}
                 </button>
             </div>
-            {/* Auto-Bid Settings */}
             <label className="flex items-center gap-2 mt-4 text-sm text-gray-700">
               <input
                 type="checkbox"
@@ -584,8 +563,6 @@ export default function AuctionClient({ auctionId }: Props) {
               disabled={!isAutoEnabled}
             />
           </div>
-
-          {/* Analytics widgets container (appears below the sticky bid section) */}
           <div className="space-y-4">
             <div className="widget bg-white p-4 rounded-xl border shadow-sm">
               <h4 className="font-bold text-lg flex items-center gap-2" style={{ color: 'var(--accent)' }}>
@@ -595,7 +572,6 @@ export default function AuctionClient({ auctionId }: Props) {
                 <canvas ref={chartCanvasRef} className="w-full h-full"></canvas>
               </div>
             </div>
-
             <div className="widget bg-white p-4 rounded-xl border shadow-sm">
               <h4 className="font-bold text-lg" style={{ color: 'var(--accent)' }}>Your Position</h4>
               <div className="pos-box flex items-center gap-4 p-4 rounded-xl mt-2 bg-gray-50 border">
@@ -607,7 +583,6 @@ export default function AuctionClient({ auctionId }: Props) {
                 <div className={`text-sm font-semibold ${isTopBidder ? 'text-green-600' : 'text-red-600'}`}>{isTopBidder ? 'Winning' : 'Outbid'}</div>
               </div>
             </div>
-
             <div className="widget bg-white p-4 rounded-xl border shadow-sm">
               <h4 className="font-bold text-lg" style={{ color: 'var(--accent)' }}>Auction Heat</h4>
               <div className="flex items-center gap-3 mt-2">
@@ -620,7 +595,6 @@ export default function AuctionClient({ auctionId }: Props) {
               </div>
               <div className="mt-2 text-sm text-gray-500">Based on watchers, bid tempo & recency.</div>
             </div>
-
             <div className="widget bg-white p-4 rounded-xl border shadow-sm">
               <h4 className="font-bold text-lg flex items-center gap-2" style={{ color: 'var(--accent)' }}>
                 <Hand size={20} /> Impact Tracker
