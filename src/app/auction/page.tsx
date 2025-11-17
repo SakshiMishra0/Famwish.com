@@ -1,20 +1,28 @@
+// src/app/auction/page.tsx
 "use client";
 
-import { useState, useEffect } from "react";
-import Link from "next/link"; // Import Link
+import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
+import { Heart } from "lucide-react"; // 1. Import the Heart icon
+import { useSession } from "next-auth/react"; // 2. Import useSession to check login status
 
 interface Auction {
-  _id: string; // Ensure the ID is a string for linking
+  _id: string;
   title: string;
   bid: string;
   bids: number;
+  isWishlisted: boolean; // 3. Add wishlisted state
 }
 
 export default function AuctionsPage() {
+  const { data: session } = useSession(); // Get session status
   const [activeCategory, setActiveCategory] = useState("Live");
   const [activeFilter, setActiveFilter] = useState("Popular");
 
   const [auctions, setAuctions] = useState<Auction[]>([]);
+  // 4. State to hold the IDs of wishlisted items
+  const [wishlistedIds, setWishlistedIds] = useState<Set<string>>(new Set());
+  
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -37,15 +45,39 @@ export default function AuctionsPage() {
     { title: "Cricket Kit (Signed)", bid: "₹2,420", bids: 8 },
   ];
 
+  // 5. Fetch both auctions and wishlist data
   useEffect(() => {
-    async function getAuctions() {
+    async function getAuctionsAndWishlist() {
       try {
         setLoading(true);
-        const res = await fetch("/api/auctions");
-        if (!res.ok) throw new Error("Failed to fetch auctions");
 
-        const data: Auction[] = await res.json();
-        setAuctions(data);
+        // Fetch all auctions
+        const auctionsRes = await fetch("/api/auctions");
+        if (!auctionsRes.ok) throw new Error("Failed to fetch auctions");
+        const auctionData = await auctionsRes.json();
+
+        let userWishlistIds = new Set<string>();
+
+        // If logged in, fetch the user's wishlist
+        if (session) {
+          const wishlistRes = await fetch("/api/wishlist");
+          if (wishlistRes.ok) {
+            const wishlistData = await wishlistRes.json();
+            // We only need the IDs for quick lookup
+            userWishlistIds = new Set(wishlistData.map((item: any) => item.auctionId));
+          }
+        }
+        
+        setWishlistedIds(userWishlistIds);
+
+        // Combine auction data with wishlist status
+        const combinedAuctions = auctionData.map((auction: any) => ({
+          ...auction,
+          isWishlisted: userWishlistIds.has(auction._id),
+        }));
+
+        setAuctions(combinedAuctions);
+        
       } catch (err) {
         console.error(err);
         setError("Unable to load auctions at the moment. Please try again later.");
@@ -54,14 +86,61 @@ export default function AuctionsPage() {
       }
     }
 
-    getAuctions();
-  }, [activeCategory]);
+    getAuctionsAndWishlist();
+  }, [activeCategory, session]); // Re-run if session status changes
+
+  // 6. Create the click handler
+  const handleWishlistToggle = useCallback(async (auctionId: string, isCurrentlyWishlisted: boolean) => {
+    if (!session) {
+      alert("Please log in to add items to your wishlist.");
+      // Or redirect to login: router.push('/auth')
+      return;
+    }
+
+    // Optimistic UI update
+    const newWishlistedIds = new Set(wishlistedIds);
+    if (isCurrentlyWishlisted) {
+      newWishlistedIds.delete(auctionId);
+    } else {
+      newWishlistedIds.add(auctionId);
+    }
+    setWishlistedIds(newWishlistedIds);
+
+    setAuctions(prevAuctions =>
+      prevAuctions.map(auction =>
+        auction._id === auctionId
+          ? { ...auction, isWishlisted: !isCurrentlyWishlisted }
+          : auction
+      )
+    );
+
+    // Call the API
+    try {
+      await fetch("/api/wishlist", {
+        method: isCurrentlyWishlisted ? "DELETE" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ auctionId }),
+      });
+      // Here you could also re-fetch the wishlist count for the navbar
+    } catch (err) {
+      console.error("Failed to update wishlist:", err);
+      // Rollback UI on error
+      setAuctions(prevAuctions =>
+        prevAuctions.map(auction =>
+          auction._id === auctionId
+            ? { ...auction, isWishlisted: isCurrentlyWishlisted }
+            : auction
+        )
+      );
+      setWishlistedIds(wishlistedIds); // Revert to old set
+    }
+  }, [session, wishlistedIds]);
 
   return (
     <div className="grid grid-cols-1 gap-10 px-10 py-10 lg:grid-cols-[2fr_0.9fr]">
 
       <div>
-        {/* CATEGORY PILLS */}
+        {/* CATEGORY PILLS (unchanged) */}
         <div className="flex flex-wrap items-center gap-3">
           {categories.map((cat) => (
             <button
@@ -79,7 +158,7 @@ export default function AuctionsPage() {
           ))}
         </div>
 
-        {/* FILTER TABS */}
+        {/* FILTER TABS (unchanged) */}
         <div className="mt-6 flex gap-8 text-sm font-medium">
           {filters.map((f) => (
             <button
@@ -96,7 +175,7 @@ export default function AuctionsPage() {
           ))}
         </div>
 
-        {/* AUCTION GRID */}
+        {/* AUCTION GRID (Updated) */}
         <div className="mt-6 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {loading ? (
             <p>Loading auctions...</p>
@@ -106,25 +185,38 @@ export default function AuctionsPage() {
             <p>No auctions found. Try creating one as a celebrity!</p>
           ) : (
             auctions.map((auction) => (
-              <Link // <-- The component that creates the link!
-                href={`/auction/${auction._id}`} // Link to the new dynamic page
+              <div
                 key={auction._id}
                 className="rounded-xl border border-[#E8E4DD] bg-white shadow-sm p-0.5 
-                hover:-translate-y-1 hover:shadow-lg transition duration-200 block group" 
+                hover:-translate-y-1 hover:shadow-lg transition duration-200 group flex flex-col"
               >
                 <div className="relative">
-                  <span className="absolute top-3 left-3 rounded-full bg-red-100 px-2 py-[2px] text-[11px] font-semibold text-red-600">
-                    LIVE
-                  </span>
-                  <span className="absolute top-3 right-3 h-7 w-7 text-[#C8B9E8] group-hover:text-red-500 text-xl flex items-center justify-center transition">
-                    ♡
-                  </span>
-                  <div className="h-36 w-full rounded-lg bg-gray-200"></div>
+                  <Link href={`/auction/${auction._id}`} className="block">
+                    <span className="absolute top-3 left-3 rounded-full bg-red-100 px-2 py-[2px] text-[11px] font-semibold text-red-600">
+                      LIVE
+                    </span>
+                    <div className="h-36 w-full rounded-lg bg-gray-200"></div>
+                  </Link>
+
+                  {/* 7. Updated Wishlist Button */}
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation(); // Prevent link navigation
+                      handleWishlistToggle(auction._id, auction.isWishlisted);
+                    }}
+                    className={`absolute top-3 right-3 h-7 w-7 flex items-center justify-center rounded-full transition-colors
+                                ${auction.isWishlisted ? 'text-red-500' : 'text-gray-400 group-hover:text-red-400'}`}
+                  >
+                    <Heart
+                      size={20}
+                      fill={auction.isWishlisted ? "currentColor" : "none"}
+                    />
+                  </button>
                 </div>
 
-                <div className="px-3 py-3">
+                <Link href={`/auction/${auction._id}`} className="block flex-1 flex flex-col px-3 py-3">
                   <h3 className="font-bold text-[14px] leading-tight">{auction.title}</h3>
-                  <div className="mt-2 flex justify-between text-sm">
+                  <div className="mt-2 flex justify-between text-sm flex-1 items-end">
                     <div>
                       <p className="text-xs text-gray-500">Current Bid</p>
                       <p className="font-bold">{auction.bid}</p>
@@ -134,20 +226,19 @@ export default function AuctionsPage() {
                       <p className="font-bold">{auction.bids}</p>
                     </div>
                   </div>
-                </div>
-              </Link>
+                </Link>
+              </div>
             ))
           )}
         </div>
       </div>
 
+      {/* Sidebar (unchanged) */}
       <div className="space-y-6">
-        {/* TRENDING AUCTIONS (still mock data) */}
         <div className="rounded-2xl bg-white p-5 shadow border border-[#E5E1DB]">
           <h3 className="flex items-center gap-1 font-bold text-lg">
             🔥 Trending Auctions
           </h3>
-
           <div className="mt-4 flex flex-col gap-5">
             {trending.map((item, i) => (
               <div key={i} className="flex items-center gap-3">
@@ -162,8 +253,6 @@ export default function AuctionsPage() {
             ))}
           </div>
         </div>
-
-        {/* RECOMMENDED */}
         <div className="rounded-2xl bg-white p-5 shadow border border-[#E5E1DB]">
           <h3 className="font-bold text-lg flex items-center gap-1">
             ⭐ Recommended for you
@@ -172,8 +261,6 @@ export default function AuctionsPage() {
             Based on your wishlist.
           </p>
         </div>
-
-        {/* RECENTLY VIEWED */}
         <div className="rounded-2xl bg-white p-5 shadow border border-[#E5E1DB]">
           <h3 className="font-bold text-lg flex items-center gap-1">
             ⏰ Recently Viewed
