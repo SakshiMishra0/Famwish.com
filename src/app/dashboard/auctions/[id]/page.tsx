@@ -1,8 +1,9 @@
 // src/app/dashboard/auctions/[id]/page.tsx
 import { ArrowLeft, BarChart, Settings, Hand } from "lucide-react";
 import Link from "next/link";
+import { notFound } from "next/navigation"; // Import notFound for robust 404 handling
 
-// Helper to format currency (copied from AuctionClient.tsx)
+// Helper to format currency
 const formatINR = (n: number) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
 // Interface for fetching auction details
@@ -17,9 +18,9 @@ interface AuctionDetails {
 }
 
 interface Props {
-  // We keep the Props interface definition for clarity
+  // NOTE: The ID is treated as a Promise in some Next.js environments
   params: {
-    id: string;
+    id: string | Promise<string>;
   };
 }
 
@@ -28,7 +29,7 @@ interface Props {
  */
 async function getAuctionDetails(auctionId: string): Promise<AuctionDetails | null> {
     
-    // Define the base URL, falling back to localhost if NEXTAUTH_URL is not set and we are in development.
+    // Define the base URL, assuming a local environment if not explicitly set
     const isDev = process.env.NODE_ENV === 'development';
     const baseUrl = process.env.NEXTAUTH_URL || (isDev ? 'http://localhost:3000' : null);
     
@@ -38,7 +39,7 @@ async function getAuctionDetails(auctionId: string): Promise<AuctionDetails | nu
     }
     
     const apiURL = `${baseUrl}/api/auctions/${auctionId}`;
-    console.log(`Attempting fetch for auction ID: ${auctionId} at ${apiURL}`); // Log the actual ID being fetched
+    console.log(`Attempting fetch for auction ID: ${auctionId} at ${apiURL}`);
 
     const res = await fetch(apiURL, {
         cache: 'no-store',
@@ -46,13 +47,11 @@ async function getAuctionDetails(auctionId: string): Promise<AuctionDetails | nu
 
     if (!res.ok) {
         console.error(`API Fetch FAILED for auction ${auctionId}. Status: ${res.status} (${res.statusText})`);
-        // We removed the error body logging to avoid unnecessary complexity, relying on the API status now.
         return null;
     }
 
     const data: any = await res.json();
     
-    // Check if the auction object itself is empty/invalid
     if (!data || !data._id) {
         console.error("API returned OK status but no valid auction data.");
         return null;
@@ -87,18 +86,24 @@ function getTimeLeft(endDate: string): string {
 }
 
 
-export default async function AuctionDashboardDetailPage({ params }: Props) {
-    // FIX: Destructuring directly on the `params` object ensures the dynamic segment is correctly accessed.
-    const { id: auctionId } = params; 
+export default async function AuctionDashboardDetailPage(props: Props) {
+    // ✅ CRITICAL FIX: Explicitly await the params object/property to resolve the promise 
+    // in environments like Turbopack that defer resolution.
+    // We use the same pattern found in src/app/profile/[id]/page.tsx
+    const resolvedParams = await props.params;
+    const auctionId = resolvedParams.id as string;
+    
+    // ROBUSTNESS FIX: Guard clause for missing ID
+    if (!auctionId || auctionId === 'undefined') { 
+        console.error("Auction ID is missing or invalid in URL params.");
+        return notFound(); 
+    }
     
     const auction = await getAuctionDetails(auctionId);
 
+    // If the data fetch fails (e.g., 404 or bad API response)
     if (!auction) {
-        return (
-            <div className="max-w-4xl mx-auto py-10 text-center text-red-500">
-                Error: Auction details not found or failed to load. Please ensure your MongoDB server is running and the Auction ID is valid.
-            </div>
-        );
+        return notFound();
     }
     
     const timeLeft = getTimeLeft(auction.endDate);
