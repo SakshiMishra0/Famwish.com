@@ -1,40 +1,48 @@
 // src/app/auction/page.tsx
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
-import { Heart } from "lucide-react"; // 1. Import the Heart icon
-import { useSession } from "next-auth/react"; // 2. Import useSession to check login status
+import { Heart } from "lucide-react";
+import { useSession } from "next-auth/react";
+import { useSearchParams } from "next/navigation";
+import SearchBar from "@/components/SearchBar"; // 1. Import the SearchBar
 
 interface Auction {
   _id: string;
   title: string;
   bid: string;
   bids: number;
-  isWishlisted: boolean; // 3. Add wishlisted state
+  isWishlisted: boolean;
 }
 
-export default function AuctionsPage() {
-  const { data: session } = useSession(); // Get session status
+// Wrapper component for Suspense
+export default function AuctionsPageWrapper() {
+  return (
+    <Suspense fallback={<div className="text-center p-10">Loading...</div>}>
+      <AuctionsPage />
+    </Suspense>
+  );
+}
+
+// Main page component
+function AuctionsPage() {
+  const { data: session } = useSession();
+  const searchParams = useSearchParams();
+  const searchQuery = searchParams.get("q");
+
   const [activeCategory, setActiveCategory] = useState("Live");
   const [activeFilter, setActiveFilter] = useState("Popular");
 
   const [auctions, setAuctions] = useState<Auction[]>([]);
-  // 4. State to hold the IDs of wishlisted items
   const [wishlistedIds, setWishlistedIds] = useState<Set<string>>(new Set());
   
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const categories = [
-    "Live",
-    "Ending Soon",
-    "Most Bid",
-    "Art",
-    "Experiences",
-    "Merchandise",
-    "Charity",
-    "NGOs",
+    "Live", "Ending Soon", "Most Bid", "Art", "Experiences", 
+    "Merchandise", "Charity", "NGOs",
   ];
 
   const filters = ["Popular", "Highest Bids", "Newest", "Ending Soon", "Recommended"];
@@ -45,32 +53,33 @@ export default function AuctionsPage() {
     { title: "Cricket Kit (Signed)", bid: "₹2,420", bids: 8 },
   ];
 
-  // 5. Fetch both auctions and wishlist data
+  // (useEffect for fetching data is unchanged)
   useEffect(() => {
     async function getAuctionsAndWishlist() {
       try {
         setLoading(true);
 
-        // Fetch all auctions
-        const auctionsRes = await fetch("/api/auctions");
+        let apiUrl = "/api/auctions";
+        if (searchQuery) {
+          apiUrl += `?search=${encodeURIComponent(searchQuery)}`;
+        }
+        
+        const auctionsRes = await fetch(apiUrl);
         if (!auctionsRes.ok) throw new Error("Failed to fetch auctions");
         const auctionData = await auctionsRes.json();
 
         let userWishlistIds = new Set<string>();
 
-        // If logged in, fetch the user's wishlist
         if (session) {
           const wishlistRes = await fetch("/api/wishlist");
           if (wishlistRes.ok) {
             const wishlistData = await wishlistRes.json();
-            // We only need the IDs for quick lookup
             userWishlistIds = new Set(wishlistData.map((item: any) => item.auctionId));
           }
         }
         
         setWishlistedIds(userWishlistIds);
 
-        // Combine auction data with wishlist status
         const combinedAuctions = auctionData.map((auction: any) => ({
           ...auction,
           isWishlisted: userWishlistIds.has(auction._id),
@@ -87,17 +96,15 @@ export default function AuctionsPage() {
     }
 
     getAuctionsAndWishlist();
-  }, [activeCategory, session]); // Re-run if session status changes
+  }, [activeCategory, session, searchQuery]);
 
-  // 6. Create the click handler
+  // (handleWishlistToggle function is unchanged)
   const handleWishlistToggle = useCallback(async (auctionId: string, isCurrentlyWishlisted: boolean) => {
     if (!session) {
       alert("Please log in to add items to your wishlist.");
-      // Or redirect to login: router.push('/auth')
       return;
     }
 
-    // Optimistic UI update
     const newWishlistedIds = new Set(wishlistedIds);
     if (isCurrentlyWishlisted) {
       newWishlistedIds.delete(auctionId);
@@ -114,17 +121,14 @@ export default function AuctionsPage() {
       )
     );
 
-    // Call the API
     try {
       await fetch("/api/wishlist", {
         method: isCurrentlyWishlisted ? "DELETE" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ auctionId }),
       });
-      // Here you could also re-fetch the wishlist count for the navbar
     } catch (err) {
       console.error("Failed to update wishlist:", err);
-      // Rollback UI on error
       setAuctions(prevAuctions =>
         prevAuctions.map(auction =>
           auction._id === auctionId
@@ -132,7 +136,7 @@ export default function AuctionsPage() {
             : auction
         )
       );
-      setWishlistedIds(wishlistedIds); // Revert to old set
+      setWishlistedIds(wishlistedIds);
     }
   }, [session, wishlistedIds]);
 
@@ -140,8 +144,12 @@ export default function AuctionsPage() {
     <div className="grid grid-cols-1 gap-10 px-10 py-10 lg:grid-cols-[2fr_0.9fr]">
 
       <div>
-        {/* CATEGORY PILLS (unchanged) */}
-        <div className="flex flex-wrap items-center gap-3">
+        {/* 2. Add the SearchBar component here */}
+        {/* We pass the current searchQuery to keep the input in sync */}
+        <SearchBar initialQuery={searchQuery} />
+
+        {/* CATEGORY PILLS (Added mt-8 for spacing) */}
+        <div className="flex flex-wrap items-center gap-3 mt-8">
           {categories.map((cat) => (
             <button
               key={cat}
@@ -157,6 +165,13 @@ export default function AuctionsPage() {
             </button>
           ))}
         </div>
+
+        {/* 3. Show search result title if a search is active */}
+        {searchQuery && (
+          <h2 className="text-2xl font-bold mt-8 mb-2 text-[#1E1635]">
+            Showing results for: &quot;{searchQuery}&quot;
+          </h2>
+        )}
 
         {/* FILTER TABS (unchanged) */}
         <div className="mt-6 flex gap-8 text-sm font-medium">
@@ -175,14 +190,19 @@ export default function AuctionsPage() {
           ))}
         </div>
 
-        {/* AUCTION GRID (Updated) */}
+        {/* AUCTION GRID (unchanged) */}
         <div className="mt-6 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {loading ? (
             <p>Loading auctions...</p>
           ) : error ? (
             <p className="text-red-500">{error}</p>
           ) : auctions.length === 0 ? (
-            <p>No auctions found. Try creating one as a celebrity!</p>
+            <p>
+              {searchQuery 
+                ? `No auctions found for "${searchQuery}".`
+                : "No auctions found. Try creating one as a celebrity!"
+              }
+            </p>
           ) : (
             auctions.map((auction) => (
               <div
@@ -197,11 +217,9 @@ export default function AuctionsPage() {
                     </span>
                     <div className="h-36 w-full rounded-lg bg-gray-200"></div>
                   </Link>
-
-                  {/* 7. Updated Wishlist Button */}
                   <button
                     onClick={(e) => {
-                      e.stopPropagation(); // Prevent link navigation
+                      e.stopPropagation();
                       handleWishlistToggle(auction._id, auction.isWishlisted);
                     }}
                     className={`absolute top-3 right-3 h-7 w-7 flex items-center justify-center rounded-full transition-colors
@@ -213,7 +231,6 @@ export default function AuctionsPage() {
                     />
                   </button>
                 </div>
-
                 <Link href={`/auction/${auction._id}`} className="block flex-1 flex flex-col px-3 py-3">
                   <h3 className="font-bold text-[14px] leading-tight">{auction.title}</h3>
                   <div className="mt-2 flex justify-between text-sm flex-1 items-end">

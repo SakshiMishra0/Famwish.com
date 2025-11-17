@@ -1,5 +1,5 @@
 // src/app/api/auctions/route.ts
-import { NextResponse } from "next/server";
+import { NextResponse, NextRequest } from "next/server"; // 1. Import NextRequest
 import clientPromise from "@/lib/mongodb";
 import { Document, ObjectId } from "mongodb";
 import { getServerSession } from "next-auth/next";
@@ -24,15 +24,31 @@ interface AuctionDocument extends Document {
 
 /**
  * GET: Fetch a list of all auctions for the main auction page.
+ * NOW UPDATED to handle search queries.
  */
-export async function GET() {
+export async function GET(request: NextRequest) { // 2. Add request parameter
   try {
     const client = await clientPromise;
     const db = client.db(DATABASE_NAME);
 
+    // 3. Check for a search query in the URL
+    const { searchParams } = new URL(request.url);
+    const searchQuery = searchParams.get("search");
+
+    // 4. Build the MongoDB query
+    const query: Document = {};
+    if (searchQuery) {
+      query.$or = [
+        { title: { $regex: searchQuery, $options: "i" } }, // Case-insensitive regex search on title
+        { description: { $regex: searchQuery, $options: "i" } }, // Case-insensitive regex search on description
+        { category: { $regex: searchQuery, $options: "i" } } // Case-insensitive regex search on category
+      ];
+    }
+
+    // 5. Use the query in the .find() method
     const auctions = await db
       .collection("auctions")
-      .find({})
+      .find(query) // <-- The query is applied here
       .project({
         _id: 1,
         title: 1,
@@ -61,6 +77,7 @@ export async function GET() {
 
 /**
  * POST: Create a new auction (Used by CreateAuctionModal.tsx).
+ * (This function is unchanged)
  */
 export async function POST(request: Request) {
     const session = await getServerSession(authOptions);

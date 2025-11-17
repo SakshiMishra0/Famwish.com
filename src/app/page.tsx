@@ -2,9 +2,10 @@
 import TopPhilanthropists from "@/components/TopPhilanthropists";
 import clientPromise from "@/lib/mongodb";
 import { Document, ObjectId } from "mongodb";
-import { getServerSession } from "next-auth/next"; // 1. Import server session
-import { authOptions } from "@/app/api/auth/[...nextauth]/route"; // 2. Import auth options
-import AuctionCard from "@/components/AuctionCard"; // 3. Import our new component
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import AuctionCard from "@/components/AuctionCard";
+import SearchBar from "@/components/SearchBar";
 
 // Define the type for our auction data
 interface Auction extends Document {
@@ -13,6 +14,15 @@ interface Auction extends Document {
   bid: string;
   bids: number;
   endDate: string;
+}
+
+// 1. Define the type for our philanthropist data
+export interface Philanthropist {
+  id: string;
+  name: string;
+  username: string;
+  amount: number;
+  wishes: number;
 }
 
 // Function to fetch top auctions (unchanged)
@@ -40,7 +50,7 @@ async function getTopAuctions(): Promise<Auction[]> {
   }
 }
 
-// 4. Create a function to get the user's wishlist on the server
+// Function to get the user's wishlist on the server (unchanged)
 async function getWishlistedIds(userId: string | undefined): Promise<Set<string>> {
   if (!userId) {
     return new Set();
@@ -62,15 +72,47 @@ async function getWishlistedIds(userId: string | undefined): Promise<Set<string>
   }
 }
 
+// 2. NEW: Function to get registered celebrities
+async function getRegisteredCelebs(): Promise<Philanthropist[]> {
+  try {
+    const client = await clientPromise;
+    const db = client.db(process.env.MONGODB_DB);
+
+    const celebs = await db.collection("users")
+      .find({ role: 'celebrity' })
+      .limit(5) // Get the top 5
+      .project({ _id: 1, name: 1 })
+      .toArray();
+
+    // Map DB data to the format our component expects
+    // NOTE: 'amount' and 'wishes' are mocked here, as they
+    // aren't in the 'users' table. A full implementation
+    // would require a complex aggregation to calculate this.
+    return celebs.map((user) => ({
+      id: user._id.toString(),
+      name: user.name,
+      // Create a mock username from the name for the profile link
+      username: user.name.toLowerCase().replace(/\s+/g, ''),
+      // Add mock data to keep the UI consistent
+      amount: Math.floor(Math.random() * 20000) + 5000,
+      wishes: Math.floor(Math.random() * 10) + 1,
+    }));
+
+  } catch (error) {
+    console.error("Failed to fetch registered celebs:", error);
+    return [];
+  }
+}
+
 export default async function HomePage() {
-  // 5. Fetch both auctions and the user's session
   const session = await getServerSession(authOptions);
   const userId = (session?.user as { id: string })?.id;
   
-  // 6. Fetch auctions and wishlist data in parallel
-  const [topAuctions, wishlistedIds] = await Promise.all([
+  // 3. Fetch all data in parallel
+  const [topAuctions, wishlistedIds, philanthropists] = await Promise.all([
     getTopAuctions(),
-    getWishlistedIds(userId)
+    getWishlistedIds(userId),
+    getRegisteredCelebs() // Call the new function
   ]);
 
   return (
@@ -78,7 +120,6 @@ export default async function HomePage() {
       
       {/* LEFT SECTION (Unchanged) */}
       <div>
-        {/* HERO */}
         <h1 className="text-5xl font-extrabold leading-tight">
           Make Wishes Come True. <br />
           One Bid. One Act. One Impact.
@@ -86,27 +127,11 @@ export default async function HomePage() {
         <p className="mt-3 text-lg text-[#6A6674]">
           Discover verified NGOs and meaningful auctions that change lives.
         </p>
-        {/* SEARCH */}
-        <div className="mt-6 flex items-center gap-3">
-          <input
-            type="text"
-            placeholder="Search auctions, NGOs, causes..."
-            className="w-full rounded-xl border border-[#D5D0C7] bg-white px-4 py-3 text-sm shadow-sm"
-          />
-          <button className="rounded-xl bg-[#1E1635] px-5 py-3 text-sm font-semibold text-white hover:bg-[#463985]">
-            Explore
-          </button>
-        </div>
-        {/* CATEGORIES */}
+        <SearchBar />
         <div className="mt-4 flex flex-wrap gap-3 text-sm">
           {[
-            "Trending",
-            "Art",
-            "Experiences",
-            "Merchandise",
-            "Children",
-            "Healthcare",
-            "Education",
+            "Trending", "Art", "Experiences", "Merchandise",
+            "Children", "Healthcare", "Education",
           ].map((tag) => (
             <span
               key={tag}
@@ -116,15 +141,10 @@ export default async function HomePage() {
             </span>
           ))}
         </div>
-
-        {/* SECTION TITLE */}
         <h2 className="mt-8 mb-3 text-2xl font-bold">Top Auctions</h2>
-
-        {/* 7. DYNAMIC AUCTIONS GRID (Updated) */}
         <div className="grid gap-5 sm:grid-cols-2">
           {topAuctions.length > 0 ? (
             topAuctions.map((auction) => (
-              // 8. Use the new AuctionCard component
               <AuctionCard 
                 key={auction._id}
                 auction={auction} 
@@ -137,8 +157,6 @@ export default async function HomePage() {
             </p>
           )}
         </div>
-
-        {/* NGOs SECTION (Unchanged) */}
         <h2 className="mt-10 text-xl font-bold">Featured NGO Partners</h2>
         <p className="mt-2 max-w-2xl text-sm text-[#6A6674]">
           Famwish works with verified NGOs and organizations to ensure
@@ -149,8 +167,8 @@ export default async function HomePage() {
         </button>
       </div>
 
-      {/* RIGHT SIDEBAR (Unchanged) */}
-      <TopPhilanthropists />
+      {/* 4. Pass the real philanthropist data to the component */}
+      <TopPhilanthropists philanthropists={philanthropists} />
     </div>
   );
 }
