@@ -67,10 +67,10 @@ export async function GET(request: NextRequest) {
           // 2. Deconstruct ngoDetails
           { $unwind: { path: "$ngoDetails", preserveNullAndEmptyArrays: true } },
           
-          // 3. --- FIX: Intermediate Project Stage to discard large user fields ---
+          // 3. --- FIXED Intermediate Project Stage to discard large user fields (no exclusion mixing) ---
           {
               $project: {
-                  // Keep all existing fields (1)
+                  // Keep all existing fields (inclusion)
                   _id: 1,
                   ngoId: 1,
                   ngoName: 1,
@@ -82,14 +82,13 @@ export async function GET(request: NextRequest) {
                   likedBy: 1, // Keep for final isLiked calculation
                   commentsCount: 1, // Keep if already initialized
                   
-                  // Extract only the profile picture and discard the rest of the ngoDetails object
+                  // Extract only the profile picture from the joined field
                   ngoProfilePicture: { $ifNull: ["$ngoDetails.profilePicture", null] },
                   
-                  // Explicitly exclude the entire bulky ngoDetails array/object
-                  ngoDetails: 0, 
+                  // ngoDetails is now implicitly excluded by default inclusion projection behavior
               }
           },
-          // ---------------------------------------------------------------------
+          // -----------------------------------------------------------------------------------------
 
           // 4. LEFT JOIN to get comments count (references the minimized document)
           {

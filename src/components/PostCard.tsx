@@ -224,7 +224,7 @@ export default function PostCard({ post }: Props) {
                 disabled={loading}
             >
                 <Heart size={18} fill={isLiked ? 'currentColor' : 'none'} /> 
-                Like ({likesCount})
+                {likesCount}
             </button>
             
             {/* COMMENTS BUTTON - USES LOCAL STATE FOR DISPLAY */}
@@ -232,7 +232,7 @@ export default function PostCard({ post }: Props) {
                 onClick={() => setShowComments(!showComments)}
                 className={`flex items-center gap-1 transition ${showComments ? 'text-blue-500 font-semibold' : 'hover:text-blue-500'}`}
             >
-                <MessageCircle size={18} /> Comment ({commentsCount})
+                <MessageCircle size={18} /> {commentsCount}
             </button>
         </div>
         <button 
