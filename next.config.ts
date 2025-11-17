@@ -5,8 +5,13 @@ const nextConfig: NextConfig = {
   // --- START CRITICAL CHANGE FOR LARGE PAYLOADS ---
   // Setting bodyParser to false delegates request body parsing to the route handler, 
   // which is better for file uploads (like our large Base64 string).
-  api: {
-    bodyParser: false,
+  reactStrictMode: true,
+  experimental: {
+    serverActions: true,
+  },
+
+  turbopack: {
+    root: __dirname,
   },
   // --- END CRITICAL CHANGE ---
 };
