@@ -1,5 +1,5 @@
 // src/app/api/auctions/route.ts
-import { NextResponse, NextRequest } from "next/server"; // 1. Import NextRequest
+import { NextResponse, NextRequest } from "next/server";
 import clientPromise from "@/lib/mongodb";
 import { Document, ObjectId } from "mongodb";
 import { getServerSession } from "next-auth/next";
@@ -20,13 +20,14 @@ interface AuctionDocument extends Document {
     createdBy: ObjectId;
     bidsHistory: any[]; 
     createdAt: Date;
+    titleImage: string | null; // <-- ADDED: Auction image URL/Base64
 }
 
 /**
  * GET: Fetch a list of all auctions for the main auction page.
- * NOW UPDATED to handle search queries.
+ * NOW UPDATED to handle search queries and return image.
  */
-export async function GET(request: NextRequest) { // 2. Add request parameter
+export async function GET(request: NextRequest) {
   try {
     const client = await clientPromise;
     const db = client.db(DATABASE_NAME);
@@ -39,16 +40,16 @@ export async function GET(request: NextRequest) { // 2. Add request parameter
     const query: Document = {};
     if (searchQuery) {
       query.$or = [
-        { title: { $regex: searchQuery, $options: "i" } }, // Case-insensitive regex search on title
-        { description: { $regex: searchQuery, $options: "i" } }, // Case-insensitive regex search on description
-        { category: { $regex: searchQuery, $options: "i" } } // Case-insensitive regex search on category
+        { title: { $regex: searchQuery, $options: "i" } },
+        { description: { $regex: searchQuery, $options: "i" } },
+        { category: { $regex: searchQuery, $options: "i" } }
       ];
     }
 
     // 5. Use the query in the .find() method
     const auctions = await db
       .collection("auctions")
-      .find(query) // <-- The query is applied here
+      .find(query)
       .project({
         _id: 1,
         title: 1,
@@ -56,6 +57,7 @@ export async function GET(request: NextRequest) { // 2. Add request parameter
         bids: 1,
         currentHighBid: 1,
         endDate: 1,
+        titleImage: 1, // <--- ADDED: Fetch the image data
       })
       .sort({ createdAt: -1 })
       .toArray();
@@ -76,8 +78,7 @@ export async function GET(request: NextRequest) { // 2. Add request parameter
 }
 
 /**
- * POST: Create a new auction (Used by CreateAuctionModal.tsx).
- * (This function is unchanged)
+ * POST: Create a new auction.
  */
 export async function POST(request: Request) {
     const session = await getServerSession(authOptions);
@@ -87,7 +88,7 @@ export async function POST(request: Request) {
     }
 
     try {
-        const { title, startingBid, category, description, endDate } = await request.json();
+        const { title, startingBid, category, description, endDate, titleImage } = await request.json(); // <--- MODIFIED: Destructure titleImage
 
         if (!title || !startingBid || !endDate) {
             return NextResponse.json({ error: "Missing required fields: title, starting bid, or end date." }, { status: 400 });
@@ -115,6 +116,7 @@ export async function POST(request: Request) {
             bids: 0,
             bidsHistory: [],
             createdAt: new Date(),
+            titleImage: titleImage || null, // <--- ADDED: Store the image data (Base64)
         };
 
         const result = await db.collection("auctions").insertOne(newAuction);

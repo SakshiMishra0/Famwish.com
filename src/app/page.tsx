@@ -28,7 +28,7 @@ export interface Philanthropist {
   wishes: number;
 }
 
-// Function to fetch top auctions (MODIFIED to add mock image)
+// Function to fetch top auctions (MODIFIED to project image and remove mock)
 async function getTopAuctions(): Promise<Auction[]> {
   try {
     const client = await clientPromise;
@@ -40,16 +40,15 @@ async function getTopAuctions(): Promise<Auction[]> {
       .find({ endDate: { $gt: now } })
       .sort({ endDate: 1 })
       .limit(2)
-      // Project the required fields. We'll manually inject the mock image.
-      .project({ _id: 1, title: 1, bid: 1, bids: 1, endDate: 1 })
+      // Project the required fields. 
+      .project({ _id: 1, title: 1, bid: 1, bids: 1, endDate: 1, titleImage: 1 }) // <--- MODIFIED: Added titleImage to projection
       .toArray();
 
     return auctions.map((auction) => ({
       ...auction,
       _id: auction._id.toString(),
-      // --- MOCK IMAGE URL ADDED ---
-      // This allows the updated AuctionCard component to display an image.
-      titleImage: "https://via.placeholder.com/300x200?text=Top+Auction+Image",
+      // --- MOCK IMAGE URL REMOVED ---
+      // titleImage: "https://via.placeholder.com/300x200?text=Top+Auction+Image",
       // ----------------------------
     })) as unknown as Auction[];
   } catch (error) {
@@ -146,7 +145,8 @@ export default async function HomePage() {
               className="rounded-full bg-white px-4 py-1.5 shadow-sm border border-[#E4E0DA]"
             >
               {tag}
-            </span>
+            </span
+          >
           ))}
         </div>
         <h2 className="mt-8 mb-3 text-2xl font-bold">Top Auctions</h2>

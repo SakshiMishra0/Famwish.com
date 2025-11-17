@@ -16,6 +16,7 @@ interface WishlistItem {
     title: string;
     bid: string;
     bids: number;
+    titleImage?: string | null; // <--- ADDED: Include the image URL/Base64 field
   };
 }
 
@@ -94,9 +95,24 @@ export default function WishlistPage() {
             key={item._id} 
             className="p-4 rounded-lg border bg-white flex items-center gap-4"
           >
-            <Link href={`/auction/${item.auctionId}`} className="block w-24 h-24 bg-gray-200 rounded-md flex-shrink-0">
-              {/* You would put an auction image here */}
+            {/* --- MODIFIED: Display image or fallback --- */}
+            <Link 
+              href={`/auction/${item.auctionId}`} 
+              className="block w-24 h-24 rounded-md flex-shrink-0 overflow-hidden"
+            >
+              {item.auctionDetails.titleImage ? (
+                <img 
+                  src={item.auctionDetails.titleImage} 
+                  alt={item.auctionDetails.title} 
+                  className="w-full h-full object-cover" 
+                />
+              ) : (
+                <div className="w-full h-full bg-gray-200 flex items-center justify-center text-xs text-gray-500">
+                  No Image
+                </div>
+              )}
             </Link>
+            {/* ----------------------------------------- */}
             
             <div className="flex-grow">
               <Link href={`/auction/${item.auctionId}`} className="block">

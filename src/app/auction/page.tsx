@@ -86,8 +86,8 @@ function AuctionsPage() {
         const combinedAuctions = auctionData.map((auction: any) => ({
           ...auction,
           isWishlisted: userWishlistIds.has(auction._id),
-          // --- MOCK IMAGE URL ADDED ON CLIENT ---
-          titleImage: "https://via.placeholder.com/300x200?text=Mock+Image",
+          // --- MOCK IMAGE URL REMOVED ON CLIENT ---
+          // titleImage: "https://via.placeholder.com/300x200?text=Mock+Image",
           // ------------------------------------
         }));
 
@@ -106,8 +106,61 @@ function AuctionsPage() {
 
   // (handleWishlistToggle function is unchanged)
   const handleWishlistToggle = useCallback(async (auctionId: string, isCurrentlyWishlisted: boolean) => {
-// ... (unchanged logic)
-  }, [session, wishlistedIds]);
+    if (!session) {
+        alert("Please log in to update your wishlist.");
+        return;
+    }
+
+    const newIsWishlisted = !isCurrentlyWishlisted;
+    // Optimistic UI update
+    setAuctions(prevAuctions => 
+      prevAuctions.map(a => 
+        a._id === auctionId ? { ...a, isWishlisted: newIsWishlisted } : a
+      )
+    );
+    
+    // Update the set for the next toggle
+    setWishlistedIds(prevIds => {
+      const newIds = new Set(prevIds);
+      if (newIsWishlisted) {
+        newIds.add(auctionId);
+      } else {
+        newIds.delete(auctionId);
+      }
+      return newIds;
+    });
+
+    try {
+      const res = await fetch("/api/wishlist", {
+        method: newIsWishlisted ? "POST" : "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ auctionId }),
+      });
+      
+      if (!res.ok) {
+        throw new Error("API call failed.");
+      }
+      
+    } catch (err) {
+      console.error("Failed to update wishlist:", err);
+      // Rollback UI on error
+      setAuctions(prevAuctions => 
+        prevAuctions.map(a => 
+          a._id === auctionId ? { ...a, isWishlisted: isCurrentlyWishlisted } : a
+        )
+      );
+      setWishlistedIds(prevIds => {
+        const newIds = new Set(prevIds);
+        if (isCurrentlyWishlisted) {
+          newIds.add(auctionId);
+        } else {
+          newIds.delete(auctionId);
+        }
+        return newIds;
+      });
+      alert(`Error: Failed to ${newIsWishlisted ? 'add to' : 'remove from'} wishlist.`);
+    }
+  }, [session]);
 
   return (
     <div className="grid grid-cols-1 gap-10 px-10 py-10 lg:grid-cols-[2fr_0.9fr]">

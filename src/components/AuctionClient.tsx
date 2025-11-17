@@ -51,6 +51,7 @@ interface AuctionDetails {
     topBidderId?: string;
     endDate: string;
     bidsHistory: BidHistoryItem[];
+    titleImage?: string | null; // <--- ADDED: Image for display
     // isWishlisted: boolean; // This was a placeholder, we'll manage it with state
 }
 
@@ -416,8 +417,18 @@ export default function AuctionClient({ auctionId }: Props) {
 
           <h1 className="text-3xl font-extrabold mt-3 mb-4" style={{ color: 'var(--accent)' }}>{auction.title}</h1>
 
-          {/* (Rest of JSX is unchanged) */}
-          <div className="big-img h-80 w-full rounded-2xl animate-fadeIn" style={{ background: 'linear-gradient(90deg,#efefef,#e6e6e6)' }} />
+          {/* --- MODIFIED: Use titleImage or fallback --- */}
+          {auction.titleImage ? (
+            <img
+                src={auction.titleImage}
+                alt={auction.title}
+                className="h-80 w-full rounded-2xl object-cover animate-fadeIn"
+            />
+          ) : (
+            <div className="h-80 w-full rounded-2xl animate-fadeIn" style={{ background: 'linear-gradient(90deg,#efefef,#e6e6e6)' }} />
+          )}
+          {/* ------------------------------------------- */}
+
           <div className="flex justify-between items-center mt-4 text-sm" style={{ color: 'var(--muted)' }}>
             <div>
               <div className="text-sm">Current Bid</div>

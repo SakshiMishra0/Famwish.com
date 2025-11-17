@@ -307,8 +307,7 @@ export default function CreateAuctionPage() {
       category: formData.category,
       description: formData.detailedDescription,
       endDate: formData.endDate,
-      // Note: Images (titleImage, secondaryImages) are NOT sent to the mock API 
-      // as the backend logic to handle large base64/file uploads isn't implemented.
+      titleImage: formData.titleImage, // <--- ADDED: Send the Base64 image
     };
 
     try {

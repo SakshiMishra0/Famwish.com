@@ -7,7 +7,6 @@ import { ObjectId } from "mongodb";
 
 /**
  * GET: Fetches the user's complete wishlist with joined auction details.
- * (This function is unchanged)
  */
 export async function GET() {
   const session = await getServerSession(authOptions);
@@ -42,6 +41,21 @@ export async function GET() {
       {
         // 3. Deconstruct the 'auctionDetails' array
         $unwind: "$auctionDetails"
+      },
+      { // <--- ADDED: Project only the required fields including titleImage
+        $project: {
+            _id: 1,
+            userId: 1,
+            auctionId: 1,
+            notes: 1,
+            auctionDetails: {
+                _id: "$auctionDetails._id",
+                title: "$auctionDetails.title",
+                bid: "$auctionDetails.bid",
+                bids: "$auctionDetails.bids",
+                titleImage: "$auctionDetails.titleImage", // <--- Explicitly include the image
+            }
+        }
       }
     ]).toArray();
 
@@ -57,6 +71,7 @@ export async function GET() {
 
 /**
  * POST: Adds an item to the user's wishlist.
+ * (Logic remains unchanged)
  */
 export async function POST(request: Request) {
   const session = await getServerSession(authOptions);
@@ -101,6 +116,7 @@ export async function POST(request: Request) {
 
 /**
  * DELETE: Removes an item from the user's wishlist.
+ * (Logic remains unchanged)
  */
 export async function DELETE(request: Request) {
   const session = await getServerSession(authOptions);
