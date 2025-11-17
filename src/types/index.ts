@@ -1,3 +1,4 @@
+// src/types/index.ts
 export interface Celeb {
   id: string;
   name: string;
@@ -11,6 +12,8 @@ export interface NgoPost {
   ngoName: string;
   title: string;
   content: string;
-  mediaUrl: string | null;
+  // --- MODIFIED ---
+  mediaUrls: string[]; // Change to array
+  // ----------------
   createdAt: string;
 }

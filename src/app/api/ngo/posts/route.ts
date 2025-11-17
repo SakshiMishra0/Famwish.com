@@ -5,7 +5,7 @@ import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import clientPromise from "@/lib/mongodb";
 import { ObjectId, Db, MongoClient } from "mongodb";
 
-// --- CONNECTION CACHING (for robust API handlers) ---
+// --- CONNECTION CACHING ---
 let cached: { client: MongoClient; db: Db } | undefined;
 
 async function connectToDatabase(): Promise<{ client: MongoClient; db: Db }> {
@@ -22,6 +22,18 @@ async function connectToDatabase(): Promise<{ client: MongoClient; db: Db }> {
   const db = client.db(dbName);
   cached = { client, db };
   return cached;
+}
+
+/**
+ * Safely convert string id to ObjectId. Returns null if invalid.
+ */
+function toObjectId(id?: string): ObjectId | null {
+  if (!id) return null;
+  try {
+    return new ObjectId(id);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -55,6 +67,8 @@ export async function GET(request: NextRequest) {
         _id: post._id.toString(),
         ngoId: post.ngoId.toString(),
         createdAt: post.createdAt.toISOString(),
+        // --- IMPORTANT: Ensure mediaUrls defaults to an array
+        mediaUrls: post.mediaUrls || [], 
     }));
 
     return NextResponse.json(formattedPosts, { status: 200 });
@@ -77,8 +91,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const { db } = await connectToDatabase();
-    // We await context.params in other dynamic routes, but here we only need request.json()
-    const { title, content, mediaUrl } = await request.json();
+    // --- MODIFIED: Expect mediaUrls instead of mediaUrl
+    const { title, content, mediaUrls } = await request.json();
 
     if (!content || content.trim().length === 0) {
       return NextResponse.json({ error: "Post content is required." }, { status: 400 });
@@ -86,7 +100,6 @@ export async function POST(request: NextRequest) {
 
     const userId = (session.user as { id: string }).id;
     
-    // Fetch user to get the official name (registered as 'name' during signup)
     const ngoUser = await db.collection("users").findOne({ _id: new ObjectId(userId) });
     const ngoName = ngoUser?.name || "Verified NGO";
     
@@ -95,7 +108,7 @@ export async function POST(request: NextRequest) {
       ngoName: ngoName,
       title: title || null,
       content: content.trim(),
-      mediaUrl: mediaUrl || null, // Base64 string for image
+      mediaUrls: mediaUrls || [], // --- MODIFIED: Store the array
       createdAt: new Date(),
     };
 

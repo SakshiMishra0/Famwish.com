@@ -5,6 +5,7 @@ import React from 'react';
 import Link from 'next/link';
 import { NgoPost } from '@/types';
 import { Heart, MessageCircle, Share2, DollarSign } from 'lucide-react';
+import ImageCarousel from './ImageCarousel'; // <-- NEW IMPORT
 
 interface Props {
   post: NgoPost;
@@ -47,10 +48,10 @@ export default function PostCard({ post }: Props) {
         <p className="text-gray-700 whitespace-pre-wrap">{post.content}</p>
       </div>
 
-      {/* Media */}
-      {post.mediaUrl && (
-        <div className="w-full h-72 bg-gray-100 flex items-center justify-center border-t border-b overflow-hidden">
-            <img src={post.mediaUrl} alt="Post Media" className="w-full h-full object-cover" />
+      {/* Media: Use Carousel */}
+      {post.mediaUrls && post.mediaUrls.length > 0 && (
+        <div className="w-full">
+            <ImageCarousel mediaUrls={post.mediaUrls} />
         </div>
       )}
 

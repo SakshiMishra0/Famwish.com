@@ -116,7 +116,7 @@ const FileUploadSection: React.FC<{
                     className="w-full h-full object-cover" 
                 />
             ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center bg-gray-50 text-gray-500 p-2">
+                <div className="w-full h-24 w-24 flex flex-col items-center justify-center bg-gray-50 text-gray-500 p-2">
                     <FileText size={24} />
                     <span className="text-xs mt-1 text-center truncate w-full">Document</span>
                 </div>
@@ -307,7 +307,7 @@ export default function CreateAuctionPage() {
       category: formData.category,
       description: formData.detailedDescription,
       endDate: formData.endDate,
-      titleImage: formData.titleImage, // <--- ADDED: Send the Base64 image
+      titleImage: formData.titleImage,
     };
 
     try {
@@ -320,12 +320,23 @@ export default function CreateAuctionPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(data.error || "Failed to create auction. (Auth/Validation Error)");
+        let errorMessage = data.error || "Failed to create auction. Please try again.";
+        
+        // --- START ENHANCED ERROR MESSAGING ---
+        if (res.status === 403) {
+            errorMessage = "ACCESS DENIED: Only a logged-in 'Celebrity' account can create auctions.";
+        } else if (res.status === 400 && data.error && data.error.includes("Missing required fields")) {
+             errorMessage = "Missing required fields: Check Title, Starting Price, and End Date.";
+        }
+        // --- END ENHANCED ERROR MESSAGING ---
+        
+        throw new Error(errorMessage);
       }
 
       alert("Auction created successfully! Redirecting to auctions.");
       router.push("/auction");
     } catch (err: any) {
+      // This is the message that will be displayed in the red box
       setError(err.message);
     }
     setLoading(false);

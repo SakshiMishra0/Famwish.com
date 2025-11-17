@@ -1,14 +1,17 @@
 // src/app/ngo/create-post/page.tsx
 "use client";
 
-import { useState, FormEvent, useEffect } from "react";
+import { useState, FormEvent, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation"; 
 import { useSession } from "next-auth/react";
-import { ArrowLeft, Send, FileText, ImageIcon, X } from "lucide-react";
+import { ArrowLeft, Send, FileText, ImageIcon, X, Trash2 } from "lucide-react";
 import { cn } from "@/utils/cn";
 
-// Helper function to convert File to Base64 data URL (copied from auction create page)
+// MAX_IMAGES constant
+const MAX_IMAGES = 4;
+
+// Helper function to convert File to Base64 data URL
 const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -40,43 +43,74 @@ const StyledInput: React.FC<any> = ({ label, required, as = 'input', ...rest }) 
   </div>
 );
 
-// Enhanced Media Upload Component
-const MediaUpload: React.FC<{ mediaUrl: string | null, onSelect: (e: React.ChangeEvent<HTMLInputElement>) => void, onRemove: () => void }> = ({ mediaUrl, onSelect, onRemove }) => {
+// Enhanced Media Upload Component for Multiple Images
+const MediaUpload: React.FC<{ mediaUrls: string[], onSelect: (files: File[]) => void, onRemove: (url: string) => void }> = ({ mediaUrls, onSelect, onRemove }) => {
+    
+    const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        if (files.length > 0) {
+            onSelect(files);
+        }
+        e.target.value = ''; // Reset input to allow re-upload of same file
+    };
+
+    const canUpload = mediaUrls.length < MAX_IMAGES;
+    
     return (
         <div className="border-t border-gray-100 pt-6">
-            <div className="flex items-center gap-3 mb-4">
-                <ImageIcon size={24} className="text-[#D9A441]" />
-                <h2 className="text-xl font-bold text-[#22163F]">Add Image (Optional)</h2>
+            <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                    <ImageIcon size={24} className="text-[#D9A441]" />
+                    <h2 className="text-xl font-bold text-[#22163F]">Add Images ({mediaUrls.length}/{MAX_IMAGES})</h2>
+                </div>
+                {mediaUrls.length > 0 && (
+                    <span className="text-sm text-gray-500">{mediaUrls.length} image{mediaUrls.length !== 1 ? 's' : ''} added.</span>
+                )}
             </div>
             
-            {mediaUrl ? (
-                <div className="relative w-full h-80 rounded-xl overflow-hidden shadow-lg border-4 border-gray-100 transition duration-300 hover:border-[#D9A441]">
-                    <img src={mediaUrl} alt="Media Preview" className="w-full h-full object-cover" />
-                    <button
-                        type="button"
-                        onClick={onRemove}
-                        className="absolute top-3 right-3 bg-red-600 text-white p-2 rounded-full shadow-lg hover:bg-red-700 transition"
-                        aria-label="Remove image"
+            <div className="flex flex-wrap gap-4">
+                
+                {/* Previews */}
+                {mediaUrls.map((url) => (
+                    <div key={url} className="relative h-32 w-32 rounded-xl overflow-hidden shadow-md border-2 border-gray-100 group">
+                        <img src={url} alt="Media Preview" className="w-full h-full object-cover" />
+                        <button
+                            type="button"
+                            onClick={() => onRemove(url)}
+                            className="absolute top-0 right-0 bg-red-600/80 text-white p-1 rounded-bl-lg opacity-0 group-hover:opacity-100 transition"
+                            aria-label="Remove image"
+                        >
+                            <Trash2 size={16} />
+                        </button>
+                    </div>
+                ))}
+
+                {/* Upload Button */}
+                {canUpload && (
+                    <label 
+                        htmlFor="media-upload"
+                        className="flex flex-col items-center justify-center p-3 rounded-xl border-4 border-dashed border-[#2F235A] bg-[#F4F7FF] text-[#22163F] h-32 w-32 text-xs font-semibold cursor-pointer transition hover:bg-[#E7E1F6]"
                     >
-                        <X size={20} />
-                    </button>
-                </div>
-            ) : (
-                <label 
-                    htmlFor="media-upload"
-                    className="flex flex-col items-center justify-center p-12 rounded-xl border-4 border-dashed border-[#2F235A] bg-[#F4F7FF] text-[#22163F] font-semibold cursor-pointer transition hover:bg-[#E7E1F6]"
-                >
-                    <ImageIcon size={36} className="mb-3 text-[#2F235A]" />
-                    <span className="text-lg">Drag image here or Click to upload</span>
-                    <span className="text-sm text-gray-500 mt-1">PNG, JPG, Max 1 file</span>
-                    <input
-                        id="media-upload"
-                        type="file"
-                        className="sr-only"
-                        accept="image/*"
-                        onChange={onSelect}
-                    />
-                </label>
+                        <ImageIcon size={30} className="mb-1 text-[#2F235A]" />
+                        <span className="text-center">Add Photo</span>
+                        <input
+                            id="media-upload"
+                            type="file"
+                            className="sr-only"
+                            accept="image/*"
+                            multiple
+                            onChange={handleFileChange}
+                        />
+                    </label>
+                )}
+                {!canUpload && (
+                    <div className="flex items-center justify-center p-3 rounded-xl border-4 border-dashed border-gray-300 bg-gray-100 text-gray-500 h-32 w-32 text-xs font-semibold cursor-not-allowed">
+                        Max {MAX_IMAGES}
+                    </div>
+                )}
+            </div>
+            {mediaUrls.length > 0 && (
+                <p className="text-sm text-gray-500 mt-3">All images will be displayed in a carousel on your post.</p>
             )}
         </div>
     );
@@ -87,41 +121,34 @@ export default function CreateNgoPostPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   
+  // --- 1. ALL HOOKS ARE CALLED FIRST AND UNCONDITIONALLY ---
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
-  const [mediaUrl, setMediaUrl] = useState<string | null>(null);
+  const [mediaUrls, setMediaUrls] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-
-  const isNgo = (session?.user as { role: string })?.role === 'ngo';
-
-  // Auth check and redirection
-  useEffect(() => {
-    if (status === "loading") return;
-    if (status === "unauthenticated") {
-      router.push("/auth");
-    } else if (!isNgo) {
-      alert("Access denied. Only authenticated NGO accounts can create posts.");
-      router.push("/ngos");
-    }
-  }, [status, isNgo, router]);
   
-  if (status === "loading" || status === "unauthenticated" || !isNgo) {
-    return <div className="text-center py-20">Loading or checking authorization...</div>;
-  }
+  const handleImageRemove = useCallback((urlToRemove: string) => {
+    setMediaUrls(prev => prev.filter(url => url !== urlToRemove));
+  }, []);
+  // --------------------------------------------------------
 
-  // File Upload Handler (simplified for one image)
-  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      try {
-        const base64Url = await fileToBase64(file);
-        setMediaUrl(base64Url);
+  // --- 2. HANDLERS DEFINED BEFORE CONDITIONAL RETURN ---
+  const handleImagesSelect = async (files: File[]) => {
+    const spaceLeft = MAX_IMAGES - mediaUrls.length;
+    const filesToProcess = files.slice(0, spaceLeft);
+
+    if (filesToProcess.length === 0) {
+        if (files.length > 0) setError(`Cannot upload more than ${MAX_IMAGES} images.`);
+        return;
+    }
+
+    try {
+        const base64Urls = await Promise.all(filesToProcess.map(fileToBase64));
+        setMediaUrls(prev => [...prev, ...base64Urls]);
         setError("");
-        e.target.value = ''; // Reset input so same file can be selected again
-      } catch (e) {
-        setError("Failed to process image file.");
-      }
+    } catch (e) {
+        setError("Failed to process one or more image files.");
     }
   };
 
@@ -139,7 +166,7 @@ export default function CreateNgoPostPage() {
     const postData = {
         title: title.trim() || null,
         content: content.trim(),
-        mediaUrl: mediaUrl,
+        mediaUrls: mediaUrls,
     };
 
     try {
@@ -162,6 +189,27 @@ export default function CreateNgoPostPage() {
     }
     setLoading(false);
   };
+  // ----------------------------------------------------
+
+  // --- 3. CONDITIONAL LOGIC & HOOK ---
+  const isNgo = (session?.user as { role: string })?.role === 'ngo';
+
+  useEffect(() => {
+    if (status === "loading") return;
+    if (status === "unauthenticated") {
+      router.push("/auth");
+    } else if (!isNgo) {
+      alert("Access denied. Only authenticated NGO accounts can create posts.");
+      router.push("/ngos");
+    }
+  }, [status, isNgo, router]);
+  
+  // --- 4. CONDITIONAL RETURN ---
+  if (status === "loading" || status === "unauthenticated" || !isNgo) {
+    return <div className="text-center py-20">Loading or checking authorization...</div>;
+  }
+  // -----------------------------
+
 
   return (
     <div className="max-w-4xl mx-auto py-10">
@@ -208,9 +256,9 @@ export default function CreateNgoPostPage() {
             </section>
 
             <MediaUpload 
-                mediaUrl={mediaUrl}
-                onSelect={handleImageSelect}
-                onRemove={() => setMediaUrl(null)}
+                mediaUrls={mediaUrls}
+                onSelect={handleImagesSelect} 
+                onRemove={handleImageRemove} 
             />
 
             {error && <p className="text-red-600 text-sm text-center mb-4 p-3 rounded-lg border border-red-300 bg-red-50">{error}</p>}
