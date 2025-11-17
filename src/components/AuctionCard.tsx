@@ -12,6 +12,9 @@ interface Auction {
   bid: string;
   bids: number;
   endDate: string;
+  // --- ADDED IMAGE FIELD ---
+  titleImage?: string | null; // Base64 or URL
+  // -------------------------
 }
 
 interface Props {
@@ -75,7 +78,17 @@ export default function AuctionCard({ auction, isInitiallyWishlisted }: Props) {
       {/* Image and Wishlist Button Container */}
       <div className="relative">
         <Link href={`/auction/${auction._id}`} className="block">
-          <div className="h-28 w-full rounded-lg bg-gray-200" />
+          {/* --- MODIFIED: Use titleImage or fallback --- */}
+          {auction.titleImage ? (
+            <img
+              src={auction.titleImage}
+              alt={auction.title}
+              className="h-28 w-full rounded-lg object-cover"
+            />
+          ) : (
+            <div className="h-28 w-full rounded-lg bg-gray-200" />
+          )}
+          {/* ------------------------------------------- */}
         </Link>
         
         <button

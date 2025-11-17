@@ -4,12 +4,13 @@
 import { useState, useEffect } from "react"; 
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation"; 
-import CreateAuctionModal from "@/components/CreateAuctionModal";
-import UserAvatar from "@/components/UserAvatar"; // <-- IMPORTED
+// import CreateAuctionModal from "@/components/CreateAuctionModal"; // <-- DELETED
+import UserAvatar from "@/components/UserAvatar";
+import Link from "next/link"; // <-- ADDED
 
 export default function MyProfilePage() {
   const { data: session, status } = useSession();
-  const [showCreateModal, setShowCreateModal] = useState(false);
+  // const [showCreateModal, setShowCreateModal] = useState(false); // <-- DELETED
   const router = useRouter(); 
 
   // --- 4. Handle redirection in a useEffect ---
@@ -41,11 +42,7 @@ export default function MyProfilePage() {
 
   return (
     <>
-      {/* The Modal (it's hidden by default) */}
-      <CreateAuctionModal
-        open={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-      />
+      {/* The Modal has been replaced by a full-page link */}
 
       <div className="pt-10 grid gap-8 md:grid-cols-[1.1fr_1.4fr]">
         
@@ -94,12 +91,13 @@ export default function MyProfilePage() {
               </button>
               
               {user.role === 'celebrity' && (
-                <button 
+                // FIX: Replaced button with a Link to the new create page
+                <Link 
+                  href="/auction/create" // <-- NEW LINK
                   className="rounded-xl bg-[#F4C15D] px-4 py-2 text-sm font-semibold text-[#1E1635] hover:bg-[#e4b24e]"
-                  onClick={() => setShowCreateModal(true)}
                 >
                   + Create Auction
-                </button>
+                </Link>
               )}
               
             </div>

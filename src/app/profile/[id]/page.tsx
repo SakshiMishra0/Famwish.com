@@ -6,7 +6,7 @@ import { notFound } from "next/navigation";
 // --- 1. Define Props ---
 interface Props {
   params: {
-    id: string; // This [id] will come from the URL
+    id: string | Promise<string>; // This [id] will come from the URL
   };
 }
 
@@ -82,7 +82,10 @@ async function getUserStats(id: string) {
 
 // --- 4. The Async Page Component ---
 export default async function ProfilePage({ params }: Props) {
-  const { id } = params;
+  // CRITICAL FIX: Explicitly await the entire params object first to resolve the dynamic segment, 
+  // which prevents the error in Next.js/Turbopack environments.
+  const resolvedParams = await params;
+  const id = resolvedParams.id as string; // Use the resolved ID
 
   // 5. Fetch the user's details and stats in parallel
   const [userData, userStats] = await Promise.all([

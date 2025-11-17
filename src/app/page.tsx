@@ -14,9 +14,12 @@ interface Auction extends Document {
   bid: string;
   bids: number;
   endDate: string;
+  // --- ADDED IMAGE FIELD ---
+  titleImage?: string | null;
+  // -------------------------
 }
 
-// 1. Define the type for our philanthropist data
+// 1. Define the type for our philanthropist data (unchanged)
 export interface Philanthropist {
   id: string;
   name: string;
@@ -25,7 +28,7 @@ export interface Philanthropist {
   wishes: number;
 }
 
-// Function to fetch top auctions (unchanged)
+// Function to fetch top auctions (MODIFIED to add mock image)
 async function getTopAuctions(): Promise<Auction[]> {
   try {
     const client = await clientPromise;
@@ -37,12 +40,17 @@ async function getTopAuctions(): Promise<Auction[]> {
       .find({ endDate: { $gt: now } })
       .sort({ endDate: 1 })
       .limit(2)
+      // Project the required fields. We'll manually inject the mock image.
       .project({ _id: 1, title: 1, bid: 1, bids: 1, endDate: 1 })
       .toArray();
 
     return auctions.map((auction) => ({
       ...auction,
       _id: auction._id.toString(),
+      // --- MOCK IMAGE URL ADDED ---
+      // This allows the updated AuctionCard component to display an image.
+      titleImage: "https://via.placeholder.com/300x200?text=Top+Auction+Image",
+      // ----------------------------
     })) as unknown as Auction[];
   } catch (error) {
     console.error("Failed to fetch top auctions:", error);
@@ -72,7 +80,7 @@ async function getWishlistedIds(userId: string | undefined): Promise<Set<string>
   }
 }
 
-// 2. NEW: Function to get registered celebrities
+// 2. NEW: Function to get registered celebrities (unchanged)
 async function getRegisteredCelebs(): Promise<Philanthropist[]> {
   try {
     const client = await clientPromise;
@@ -116,7 +124,7 @@ export default async function HomePage() {
   ]);
 
   return (
-    <div className="grid grid-cols-1 gap-10 pt-10 md:grid-cols-[1.6fr_1fr]">
+    <div className="pt-10 grid grid-cols-1 md:grid-cols-[1.6fr_1fr] gap-10">
       
       {/* LEFT SECTION (Unchanged) */}
       <div>
