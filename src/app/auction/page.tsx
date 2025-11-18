@@ -6,7 +6,7 @@ import Link from "next/link";
 import { Heart } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
-import SearchBar from "@/components/SearchBar"; // 1. Import the SearchBar
+import SearchBar from "@/components/SearchBar";
 
 interface Auction {
   _id: string;
@@ -14,10 +14,18 @@ interface Auction {
   bid: string;
   bids: number;
   isWishlisted: boolean;
-  // --- ADDED IMAGE FIELD ---
   titleImage?: string | null;
-  // -------------------------
 }
+
+// Interface for Trending/Sidebar items (simpler subset of Auction)
+interface SidebarAuction {
+    _id: string;
+    title: string;
+    bid: string;
+    bids: number;
+    titleImage?: string | null;
+}
+
 
 // Wrapper component for Suspense
 export default function AuctionsPageWrapper() {
@@ -38,6 +46,8 @@ function AuctionsPage() {
   const [activeFilter, setActiveFilter] = useState("Popular");
 
   const [auctions, setAuctions] = useState<Auction[]>([]);
+  const [trending, setTrending] = useState<SidebarAuction[]>([]); // <--- NEW STATE
+  const [recommended, setRecommended] = useState<SidebarAuction[]>([]); // <--- NEW STATE
   const [wishlistedIds, setWishlistedIds] = useState<Set<string>>(new Set());
   
   const [loading, setLoading] = useState(true);
@@ -49,14 +59,66 @@ function AuctionsPage() {
   ];
 
   const filters = ["Popular", "Highest Bids", "Newest", "Ending Soon", "Recommended"];
+  
+  // --- NEW: Fetch Trending Auctions (Simulated by filtering logic) ---
+  const fetchTrendingAuctions = useCallback(async () => {
+      try {
+          // In a real application, this API would support a sort by 'bids' or 'recent activity'.
+          // For now, we fetch all and sort by bids client-side.
+          const res = await fetch("/api/auctions");
+          if (!res.ok) throw new Error("Failed to fetch trending data");
+          
+          const data: Auction[] = await res.json();
+          
+          // Simulate "Trending" by taking the 3 auctions with the highest number of bids
+          const trendingData = data
+            .slice() // create copy
+            .sort((a, b) => b.bids - a.bids)
+            .slice(0, 3)
+            .map(a => ({
+                _id: a._id,
+                title: a.title,
+                bid: a.bid,
+                bids: a.bids,
+                titleImage: a.titleImage,
+            }));
+            
+          setTrending(trendingData);
+      } catch (e) {
+          console.error("Error fetching trending auctions:", e);
+          // Keep the trending list empty on error, no mock fallback
+      }
+  }, []);
+  // -----------------------------------------------------------------
 
-  const trending = [
-    { title: "Signed Guitar", bid: "₹3,800", bids: 12 },
-    { title: "Vintage Art", bid: "₹4,300", bids: 32 },
-    { title: "Cricket Kit (Signed)", bid: "₹2,420", bids: 8 },
-  ];
+  // --- NEW: Fetch Recommended Auctions (Simulated) ---
+  const fetchRecommendedAuctions = useCallback(async () => {
+      // In a functional app, this would use the user's history/wishlist to recommend.
+      // For now, we'll fetch a list and pick the newest three.
+      try {
+          const res = await fetch("/api/auctions");
+          if (!res.ok) throw new Error("Failed to fetch recommended data");
+          
+          const data: Auction[] = await res.json();
+          
+          // Simulate "Recommended" by taking the newest 3 auctions (assuming /api/auctions returns sorted by date DESC)
+          const recommendedData = data.slice(0, 3).map(a => ({
+                _id: a._id,
+                title: a.title,
+                bid: a.bid,
+                bids: a.bids,
+                titleImage: a.titleImage,
+          }));
+          
+          setRecommended(recommendedData);
+      } catch (e) {
+          console.error("Error fetching recommended auctions:", e);
+      }
+  }, []);
+  // ---------------------------------------------------
 
-  // (useEffect for fetching data is MODIFIED)
+
+  // Main Data Fetching Effect
   useEffect(() => {
     async function getAuctionsAndWishlist() {
       try {
@@ -86,9 +148,6 @@ function AuctionsPage() {
         const combinedAuctions = auctionData.map((auction: any) => ({
           ...auction,
           isWishlisted: userWishlistIds.has(auction._id),
-          // --- MOCK IMAGE URL REMOVED ON CLIENT ---
-          // titleImage: "https://via.placeholder.com/300x200?text=Mock+Image",
-          // ------------------------------------
         }));
 
         setAuctions(combinedAuctions);
@@ -102,7 +161,17 @@ function AuctionsPage() {
     }
 
     getAuctionsAndWishlist();
-  }, [activeCategory, session, searchQuery]);
+    
+    // Fetch sidebar data after main data is loaded or in parallel
+    fetchTrendingAuctions();
+    if (session) {
+        fetchRecommendedAuctions();
+    } else {
+        // Clear recommended if logged out or if functionality doesn't exist
+        setRecommended([]);
+    }
+    
+  }, [activeCategory, session, searchQuery, fetchTrendingAuctions, fetchRecommendedAuctions]);
 
   // (handleWishlistToggle function is unchanged)
   const handleWishlistToggle = useCallback(async (auctionId: string, isCurrentlyWishlisted: boolean) => {
@@ -166,11 +235,9 @@ function AuctionsPage() {
     <div className="grid grid-cols-1 gap-10 px-10 py-10 lg:grid-cols-[2fr_0.9fr]">
 
       <div>
-        {/* 2. Add the SearchBar component here */}
-        {/* We pass the current searchQuery to keep the input in sync */}
         <SearchBar initialQuery={searchQuery} />
 
-        {/* CATEGORY PILLS (Added mt-8 for spacing) */}
+        {/* CATEGORY PILLS */}
         <div className="flex flex-wrap items-center gap-3 mt-8">
           {categories.map((cat) => (
             <button
@@ -188,14 +255,14 @@ function AuctionsPage() {
           ))}
         </div>
 
-        {/* 3. Show search result title if a search is active */}
+        {/* Show search result title if a search is active */}
         {searchQuery && (
           <h2 className="text-2xl font-bold mt-8 mb-2 text-[#1E1635]">
             Showing results for: &quot;{searchQuery}&quot;
           </h2>
         )}
 
-        {/* FILTER TABS (unchanged) */}
+        {/* FILTER TABS */}
         <div className="mt-6 flex gap-8 text-sm font-medium">
           {filters.map((f) => (
             <button
@@ -212,7 +279,7 @@ function AuctionsPage() {
           ))}
         </div>
 
-        {/* AUCTION GRID (MODIFIED: update placeholder to use image) */}
+        {/* AUCTION GRID */}
         <div className="mt-6 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {loading ? (
             <p>Loading auctions...</p>
@@ -237,7 +304,6 @@ function AuctionsPage() {
                     <span className="absolute top-3 left-3 rounded-full bg-red-100 px-2 py-[2px] text-[11px] font-semibold text-red-600">
                       LIVE
                     </span>
-                    {/* --- MODIFIED: Use titleImage or fallback --- */}
                     {auction.titleImage ? (
                       <img
                         src={auction.titleImage}
@@ -247,7 +313,6 @@ function AuctionsPage() {
                     ) : (
                       <div className="h-36 w-full rounded-lg bg-gray-200"></div>
                     )}
-                    {/* ------------------------------------------- */}
                   </Link>
                   <button
                     onClick={(e) => {
@@ -282,39 +347,78 @@ function AuctionsPage() {
         </div>
       </div>
 
-      {/* Sidebar (unchanged) */}
+      {/* Sidebar (UPDATED) */}
       <div className="space-y-6">
         <div className="rounded-2xl bg-white p-5 shadow border border-[#E5E1DB]">
           <h3 className="flex items-center gap-1 font-bold text-lg">
             🔥 Trending Auctions
           </h3>
           <div className="mt-4 flex flex-col gap-5">
-            {trending.map((item, i) => (
-              <div key={i} className="flex items-center gap-3">
-                <div className="h-12 w-12 rounded-lg bg-gray-200" />
-                <div>
-                  <p className="font-semibold text-sm">{item.title}</p>
-                  <p className="text-xs text-gray-500">
-                    {item.bid} · {item.bids} bids
-                  </p>
-                </div>
-              </div>
-            ))}
+            {trending.length > 0 ? (
+                trending.map((item, i) => (
+                    <Link href={`/auction/${item._id}`} key={item._id} className="flex items-center gap-3 hover:bg-gray-50 p-2 rounded-lg transition">
+                        <div className="h-12 w-12 rounded-lg bg-gray-200 overflow-hidden">
+                            {item.titleImage ? (
+                                <img src={item.titleImage} alt={item.title} className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full bg-gray-200"></div>
+                            )}
+                        </div>
+                        <div>
+                        <p className="font-semibold text-sm">{item.title}</p>
+                        <p className="text-xs text-gray-500">
+                            {item.bid} · {item.bids} bids
+                        </p>
+                        </div>
+                    </Link>
+                ))
+            ) : (
+                <p className="text-sm text-gray-500">No trending auctions available.</p>
+            )}
           </div>
         </div>
-        <div className="rounded-2xl bg-white p-5 shadow border border-[#E5E1DB]">
-          <h3 className="font-bold text-lg flex items-center gap-1">
-            ⭐ Recommended for you
-          </h3>
-          <p className="text-sm text-gray-500 mt-1">
-            Based on your wishlist.
-          </p>
+        
+        {session && (
+            <div className="rounded-2xl bg-white p-5 shadow border border-[#E5E1DB]">
+            <h3 className="font-bold text-lg flex items-center gap-1">
+                ⭐ Recommended for you
+            </h3>
+            <p className="text-sm text-gray-500 mt-1 mb-4">
+                Based on your preferences and activity.
+            </p>
+            <div className="mt-4 flex flex-col gap-5">
+            {recommended.length > 0 ? (
+                recommended.map((item, i) => (
+                    <Link href={`/auction/${item._id}`} key={item._id} className="flex items-center gap-3 hover:bg-gray-50 p-2 rounded-lg transition">
+                        <div className="h-12 w-12 rounded-lg bg-gray-200 overflow-hidden">
+                            {item.titleImage ? (
+                                <img src={item.titleImage} alt={item.title} className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full bg-gray-200"></div>
+                            )}
+                        </div>
+                        <div>
+                        <p className="font-semibold text-sm">{item.title}</p>
+                        <p className="text-xs text-gray-500">
+                            {item.bid} · {item.bids} bids
+                        </p>
+                        </div>
+                    </Link>
+                ))
+            ) : (
+                <p className="text-sm text-gray-500">No recommendations right now.</p>
+            )}
+          </div>
         </div>
+        )}
+        
         <div className="rounded-2xl bg-white p-5 shadow border border-[#E5E1DB]">
           <h3 className="font-bold text-lg flex items-center gap-1">
             ⏰ Recently Viewed
           </h3>
-          <p className="text-sm text-gray-500 mt-1">Nothing yet.</p>
+          <p className="text-sm text-gray-500 mt-1">
+            (Client-side feature, not implemented yet)
+          </p>
         </div>
       </div>
     </div>

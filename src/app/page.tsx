@@ -19,13 +19,13 @@ interface Auction extends Document {
   // -------------------------
 }
 
-// 1. Define the type for our philanthropist data (unchanged)
+// 1. Define the type for our philanthropist data
 export interface Philanthropist {
   id: string;
   name: string;
   username: string;
-  amount: number;
-  wishes: number;
+  amount: number; // Total raised
+  wishes: number; // Wishes fulfilled (auctions created)
 }
 
 // Function to fetch top auctions (MODIFIED to project image and remove mock)
@@ -41,15 +41,12 @@ async function getTopAuctions(): Promise<Auction[]> {
       .sort({ endDate: 1 })
       .limit(2)
       // Project the required fields. 
-      .project({ _id: 1, title: 1, bid: 1, bids: 1, endDate: 1, titleImage: 1 }) // <--- MODIFIED: Added titleImage to projection
+      .project({ _id: 1, title: 1, bid: 1, bids: 1, endDate: 1, titleImage: 1 }) 
       .toArray();
 
     return auctions.map((auction) => ({
       ...auction,
       _id: auction._id.toString(),
-      // --- MOCK IMAGE URL REMOVED ---
-      // titleImage: "https://via.placeholder.com/300x200?text=Top+Auction+Image",
-      // ----------------------------
     })) as unknown as Auction[];
   } catch (error) {
     console.error("Failed to fetch top auctions:", error);
@@ -79,31 +76,53 @@ async function getWishlistedIds(userId: string | undefined): Promise<Set<string>
   }
 }
 
-// 2. NEW: Function to get registered celebrities (unchanged)
+// 2. MODIFIED: Function to get registered celebrities with real stats
 async function getRegisteredCelebs(): Promise<Philanthropist[]> {
   try {
     const client = await clientPromise;
     const db = client.db(process.env.MONGODB_DB);
 
+    // 1. Fetch all celebrity users
     const celebs = await db.collection("users")
       .find({ role: 'celebrity' })
-      .limit(5) // Get the top 5
+      .limit(5)
       .project({ _id: 1, name: 1 })
       .toArray();
+      
+    const celebIds = celebs.map(c => c._id);
 
-    // Map DB data to the format our component expects
-    // NOTE: 'amount' and 'wishes' are mocked here, as they
-    // aren't in the 'users' table. A full implementation
-    // would require a complex aggregation to calculate this.
-    return celebs.map((user) => ({
-      id: user._id.toString(),
-      name: user.name,
-      // Create a mock username from the name for the profile link
-      username: user.name.toLowerCase().replace(/\s+/g, ''),
-      // Add mock data to keep the UI consistent
-      amount: Math.floor(Math.random() * 20000) + 5000,
-      wishes: Math.floor(Math.random() * 10) + 1,
-    }));
+    // 2. Aggregate stats from auctions collection
+    const stats = await db.collection("auctions").aggregate([
+        { 
+            // Only look at auctions created by the fetched celebrities
+            $match: { createdBy: { $in: celebIds } }
+        },
+        { 
+            $group: {
+                _id: "$createdBy", // Group by the celebrity's ID
+                totalRaised: { $sum: "$currentHighBid" }, // Sum total raised
+                wishesFulfilled: { $sum: 1 }, // Count total auctions created
+            }
+        }
+    ]).toArray();
+
+    // 3. Map stats back to celebrity user data
+    const statsMap = new Map(stats.map(s => [s._id.toString(), s]));
+
+    // 4. Combine and format data
+    const philanthropists: Philanthropist[] = celebs.map((user) => {
+        const userStats = statsMap.get(user._id.toString());
+        
+        return {
+            id: user._id.toString(),
+            name: user.name,
+            username: user.name.toLowerCase().replace(/\s+/g, ''), // Still mock username for linking
+            amount: userStats?.totalRaised || 0, // Use real calculated value or 0
+            wishes: userStats?.wishesFulfilled || 0, // Use real calculated value or 0
+        };
+    }).sort((a, b) => b.amount - a.amount); // Sort by amount raised to be "Top"
+
+    return philanthropists;
 
   } catch (error) {
     console.error("Failed to fetch registered celebs:", error);
@@ -119,7 +138,7 @@ export default async function HomePage() {
   const [topAuctions, wishlistedIds, philanthropists] = await Promise.all([
     getTopAuctions(),
     getWishlistedIds(userId),
-    getRegisteredCelebs() // Call the new function
+    getRegisteredCelebs() // Call the MODIFIED function
   ]);
 
   return (

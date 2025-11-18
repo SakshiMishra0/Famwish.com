@@ -18,14 +18,15 @@ interface AuctionDocument extends Document {
     category: string;
     description: string;
     createdBy: ObjectId;
+    ngoPartnerId?: ObjectId; // Field for NGO ID association
     bidsHistory: any[]; 
     createdAt: Date;
-    titleImage: string | null; // <-- ADDED: Auction image URL/Base64
+    titleImage: string | null; 
 }
 
 /**
  * GET: Fetch a list of all auctions for the main auction page.
- * NOW UPDATED to handle search queries AND createdBy user ID filter.
+ * (Logic for GET route remains functional)
  */
 export async function GET(request: NextRequest) { 
   try {
@@ -34,7 +35,8 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const searchQuery = searchParams.get("search");
-    const createdBy = searchParams.get("createdBy"); // <--- ADDED: Get createdBy filter
+    const createdBy = searchParams.get("createdBy");
+    const ngoPartnerId = searchParams.get("ngoPartnerId"); 
 
     // 4. Build the MongoDB query
     const query: Document = {};
@@ -48,12 +50,19 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    if (createdBy) { // <--- ADDED: Filter by createdBy if provided
+    if (createdBy) { // Filter by createdBy if provided
         try {
             query.createdBy = new ObjectId(createdBy);
         } catch (e) {
-            // In a real app, this should log an error, but here we return a 400
             return NextResponse.json({ error: "Invalid createdBy user ID" }, { status: 400 });
+        }
+    }
+    
+    if (ngoPartnerId) { // Filter by ngoPartnerId if provided
+        try {
+            query.ngoPartnerId = new ObjectId(ngoPartnerId);
+        } catch (e) {
+            return NextResponse.json({ error: "Invalid ngoPartnerId ID" }, { status: 400 });
         }
     }
     // --- END: Filtering Logic ---
@@ -70,7 +79,7 @@ export async function GET(request: NextRequest) {
         currentHighBid: 1,
         endDate: 1,
         titleImage: 1, 
-        createdAt: 1, // <--- ADDED: Include creation date to determine status
+        createdAt: 1, 
       })
       .sort({ createdAt: -1 })
       .toArray();
@@ -93,7 +102,6 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST: Create a new auction.
- * (Logic remains unchanged)
  */
 export async function POST(request: Request) {
     const session = await getServerSession(authOptions);
@@ -103,10 +111,11 @@ export async function POST(request: Request) {
     }
 
     try {
-        const { title, startingBid, category, description, endDate, titleImage } = await request.json(); // <--- MODIFIED: Destructure titleImage
+        // --- MODIFIED: Destructure ngoPartnerId from the body ---
+        const { title, startingBid, category, description, endDate, titleImage, ngoPartnerId } = await request.json(); 
 
-        if (!title || !startingBid || !endDate) {
-            return NextResponse.json({ error: "Missing required fields: title, starting bid, or end date." }, { status: 400 });
+        if (!title || !startingBid || !endDate || !ngoPartnerId) {
+            return NextResponse.json({ error: "Missing required fields: title, starting bid, end date, or NGO partner." }, { status: 400 });
         }
         
         const numericBid = Number(startingBid);
@@ -114,11 +123,19 @@ export async function POST(request: Request) {
             return NextResponse.json({ error: "Starting bid must be a positive number." }, { status: 400 });
         }
         
+        // Validate ngoPartnerId as a valid ObjectId
+        let ngoOid: ObjectId;
+        try {
+            ngoOid = new ObjectId(ngoPartnerId);
+        } catch (e) {
+            return NextResponse.json({ error: "Invalid NGO partner ID format." }, { status: 400 });
+        }
+        
         const client = await clientPromise;
         const db = client.db(process.env.MONGODB_DB);
         const userId = new ObjectId((session.user as { id: string }).id);
         
-        const newAuction: AuctionDocument = {
+        const newAuction: Omit<AuctionDocument, 'bid'> & { bid: string } = {
             _id: new ObjectId(),
             title,
             startingBid: numericBid,
@@ -128,11 +145,12 @@ export async function POST(request: Request) {
             description: description || "",
             endDate: new Date(endDate).toISOString(),
             createdBy: userId,
+            ngoPartnerId: ngoOid, // <--- SAVING THE NGO ID
             bids: 0,
             bidsHistory: [],
             createdAt: new Date(),
-            titleImage: titleImage || null, // <--- ADDED: Store the image data (Base64)
-        };
+            titleImage: titleImage || null, 
+        } as Omit<AuctionDocument, 'bid'> & { bid: string }; 
 
         const result = await db.collection("auctions").insertOne(newAuction);
 

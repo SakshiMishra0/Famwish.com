@@ -6,9 +6,28 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation"; 
 import UserAvatar from "@/components/UserAvatar";
 import Link from "next/link"; 
-import { TrendingUp, DollarSign } from "lucide-react"; 
+import { TrendingUp, DollarSign, Hand, Clock } from "lucide-react"; 
 
-// --- NEW Auction Interface ---
+// --- NEW Interface for Activity ---
+interface UserActivity {
+    type: "bid";
+    auctionId: string;
+    auctionTitle: string;
+    bidAmount: number;
+    timestamp: string;
+    isHighBid: boolean;
+}
+// ----------------------------
+
+// --- Interface for Stats (Unchanged) ---
+interface UserStats {
+    totalRaised: number;
+    wishesFulfilled: number;
+    ngosSupported: number; 
+}
+// ----------------------------
+
+// --- Auction Interface (Unchanged) ---
 interface Auction {
     _id: string;
     title: string;
@@ -17,9 +36,25 @@ interface Auction {
     endDate: string;
     titleImage?: string | null;
 }
-// --- END NEW Auction Interface ---
+// ----------------------------------------
 
-// --- NEW Helper Component: Auction List ---
+// Helper to format INR
+const formatINR = (n: number) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+
+// Helper to format time ago
+const formatTimeAgo = (isoString: string): string => {
+    const now = new Date();
+    const past = new Date(isoString);
+    const diffSeconds = Math.floor((now.getTime() - past.getTime()) / 1000);
+
+    if (diffSeconds < 60) return "just now";
+    if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
+    if (diffSeconds < 86400) return `${Math.floor(diffSeconds / 3600)}h ago`;
+    return `${Math.floor(diffSeconds / 86400)}d ago`;
+};
+
+
+// --- Helper Component: Auction List (Unchanged, copied for completeness) ---
 function CelebrityAuctionsList({ userId }: { userId: string }) {
     const [auctions, setAuctions] = useState<Auction[]>([]);
     const [loading, setLoading] = useState(true);
@@ -28,7 +63,6 @@ function CelebrityAuctionsList({ userId }: { userId: string }) {
     useEffect(() => {
         async function fetchAuctions() {
             try {
-                // Fetch auctions created by the current user using the updated API
                 const res = await fetch(`/api/auctions?createdBy=${userId}`);
                 if (!res.ok) {
                     throw new Error("Failed to fetch auctions");
@@ -113,58 +147,156 @@ function CelebrityAuctionsList({ userId }: { userId: string }) {
         </>
     );
 }
-// --- END NEW Helper Component ---
+// --- END Helper Component ---
+
+
+// --- NEW: Component to list the bidder's recent activity ---
+function BidderActivityList() {
+    const [activity, setActivity] = useState<UserActivity[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+
+    useEffect(() => {
+        async function fetchActivity() {
+            try {
+                const res = await fetch(`/api/profile/activity`);
+                if (!res.ok) {
+                    throw new Error("Failed to fetch user activity.");
+                }
+                const data: UserActivity[] = await res.json();
+                setActivity(data);
+            } catch (e: any) {
+                console.error("Fetch activity error:", e);
+                setError(e.message || "Failed to load recent activity.");
+            } finally {
+                setLoading(false);
+            }
+        }
+        fetchActivity();
+    }, []);
+
+    if (loading) {
+        return <div className="p-4 text-center text-gray-500">Loading recent bids...</div>;
+    }
+
+    if (error) {
+        return <div className="p-4 text-center text-red-500">Error loading activity: {error}</div>;
+    }
+    
+    return (
+        <>
+            <h2 className="text-xl font-bold mb-4 text-[#22163F]">Your Recent Bids</h2>
+            <div className="space-y-4">
+                {activity.length === 0 ? (
+                    <p className="p-4 text-gray-600 border rounded-xl bg-gray-50">You haven't placed any bids yet.</p>
+                ) : (
+                    activity.map((item) => (
+                        <Link 
+                            href={`/auction/${item.auctionId}`} 
+                            // Use a unique key based on auctionId and timestamp to handle multiple bids on the same auction
+                            key={item.auctionId + item.timestamp} 
+                            className="flex items-center gap-4 rounded-xl p-3 bg-white border shadow-sm hover:shadow-md transition"
+                        >
+                            <div 
+                                className={`h-12 w-12 flex-shrink-0 rounded-lg flex items-center justify-center ${item.isHighBid ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}
+                            >
+                                <Hand size={20} />
+                            </div>
+                            
+                            <div className="flex-grow">
+                                <h3 className="font-semibold text-base truncate">Bid on: {item.auctionTitle}</h3>
+                                <p className="text-xs text-gray-500 mt-1">
+                                    <DollarSign size={12} className="inline mr-1 text-green-500" /> {formatINR(item.bidAmount)} 
+                                </p>
+                            </div>
+
+                            <div className="text-right flex-shrink-0">
+                                <span 
+                                    className={`inline-block px-3 py-1 text-xs font-bold rounded-full border ${item.isHighBid ? 'text-red-600 bg-red-100 border-red-200' : 'text-gray-600 bg-gray-100 border-gray-200'}`}
+                                >
+                                    {item.isHighBid ? 'HIGH BID' : 'OUTBID'}
+                                </span>
+                                <p className="text-xs text-gray-500 mt-1" suppressHydrationWarning>
+                                    <Clock size={10} className="inline mr-1" /> {formatTimeAgo(item.timestamp)}
+                                </p>
+                            </div>
+                        </Link>
+                    ))
+                )}
+            </div>
+        </>
+    );
+}
+
 
 export default function MyProfilePage() {
   const { data: session, status } = useSession();
   const router = useRouter(); 
+  
+  const [userStats, setUserStats] = useState<UserStats>({
+      totalRaised: 0,
+      wishesFulfilled: 0,
+      ngosSupported: 0,
+  });
 
-  // --- 4. Handle redirection in a useEffect ---
+  const formatINR = (n: number) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+
+
+  // --- Fetch stats and handle redirection (Unchanged) ---
   useEffect(() => {
-    // If not authenticated (and not loading), redirect to home
+    if (status === "loading") return;
+    
     if (status === "unauthenticated") {
       router.push("/");
+      return;
     }
+    
+    async function fetchUserStats() {
+        const res = await fetch("/api/profile/stats");
+        if (res.ok) {
+            const data = await res.json();
+            setUserStats(prev => ({
+                ...prev,
+                totalRaised: data.totalRaised || 0,
+                wishesFulfilled: data.wishesFulfilled || 0,
+            }));
+        } else {
+            console.error("Failed to fetch user stats.");
+        }
+    }
+    
+    fetchUserStats();
   }, [status, router]);
   // ----------------------------------------
 
-  // 5. Handle loading and unauthenticated states gracefully
-  // While redirecting or loading, show a loading message
+  // Handle loading and unauthenticated states gracefully
   if (status === "loading" || status === "unauthenticated") {
     return <div className="text-center py-20">Loading...</div>;
   }
   
-  // We are sure the user is authenticated here
   const user = session?.user as { 
-    id: string; // <--- Ensure ID is available
+    id: string; 
     name: string; 
     role: string; 
     email: string 
   };
 
-  // This should not be hit, but it's safe to keep
   if (!user) {
     return <div className="text-center py-20">Loading...</div>;
   }
 
-  // 6. Check if the user is a celebrity
   const isCelebrity = user.role === 'celebrity';
 
   return (
     <>
-      {/* The Modal has been replaced by a full-page link */}
-
       <div className="pt-10 grid gap-8 md:grid-cols-[1.1fr_1.4fr]">
         
-        {/* LEFT PANEL */}
+        {/* LEFT PANEL (Unchanged) */}
         <div>
-          {/* Profile Card */}
           <div className="rounded-2xl bg-white p-6 shadow-sm border border-[#E8E3DB]">
             
-            {/* --- UPDATED AVATAR DISPLAY --- */}
             <UserAvatar size="large" /> 
-            {/* ---------------------------- */}
-
+            
             <h1 className="mt-4 text-2xl font-extrabold tracking-tight">
               {user.name}
               {isCelebrity && (
@@ -178,18 +310,18 @@ export default function MyProfilePage() {
               This is your personal profile page. You can update your bio here.
             </p>
 
-            {/* Stats (we can wire these up later) */}
+            {/* Stats - NOW REAL DATA */}
             <div className="grid grid-cols-3 gap-3 mt-5 text-center text-sm">
               <div className="rounded-xl bg-[#FAF9F7] py-3 border border-[#E8E3DB]">
-                <p className="font-bold">₹0</p>
+                <p className="font-bold">{formatINR(userStats.totalRaised)}</p>
                 <p className="text-xs text-gray-600">Total raised</p>
               </div>
               <div className="rounded-xl bg-[#FAF9F7] py-3 border border-[#E8E3DB]">
-                <p className="font-bold">0</p>
+                <p className="font-bold">{userStats.wishesFulfilled}</p>
                 <p className="text-xs text-gray-600">Wishes fulfilled</p>
               </div>
               <div className="rounded-xl bg-[#FAF9F7] py-3 border border-[#E8E3DB]">
-                <p className="font-bold">0</p>
+                <p className="font-bold">{userStats.ngosSupported}</p>
                 <p className="text-xs text-gray-600">NGOs supported</p>
               </div>
             </div>
@@ -201,9 +333,8 @@ export default function MyProfilePage() {
               </button>
               
               {isCelebrity && (
-                // FIX: Replaced button with a Link to the new create page
                 <Link 
-                  href="/auction/create" // <-- NEW LINK
+                  href="/auction/create" 
                   className="rounded-xl bg-[#F4C15D] px-4 py-2 text-sm font-semibold text-[#1E1635] hover:bg-[#e4b24e]"
                 >
                   + Create Auction
@@ -214,19 +345,16 @@ export default function MyProfilePage() {
           </div>
         </div>
 
-        {/* RIGHT PANEL (Your activity) */}
+        {/* RIGHT PANEL (Your activity) - MODIFIED */}
         <div>
           <div className="rounded-2xl bg-white px-8 py-7 shadow-sm border border-[#E8E3DB]">
             
             {isCelebrity ? (
+                 // Celebrities see their created auctions
                  <CelebrityAuctionsList userId={user.id} /> 
             ) : (
-                <> {/* <--- WRAPPED: Added a JSX fragment to fix the syntax error */}
-                    <h2 className="text-xl font-bold">Your Activity</h2>
-                    <p className="mt-3 text-sm text-gray-600">
-                        Your recent bids and followed celebrities will appear here.
-                    </p>
-                </>
+                // Bidders see their recent bids
+                <BidderActivityList /> 
             )}
 
           </div>

@@ -1,11 +1,18 @@
 // src/app/auction/create/page.tsx
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react"; 
 import Link from "next/link";
 import { ArrowLeft, Tag, DollarSign, Clock, Handshake, ImageIcon, CheckCircle, UploadCloud, Plus, X, Trash2, FileText } from "lucide-react";
 import { useRouter } from "next/navigation"; 
 import { cn } from "@/utils/cn"; 
+
+// --- NEW Interface for NGO List ---
+interface NgoOption {
+    id: string;
+    name: string;
+}
+// ----------------------------------
 
 // Mock type definitions for form data
 interface AuctionFormData {
@@ -19,31 +26,12 @@ interface AuctionFormData {
   buyNowPrice: string;
   startDate: string;
   endDate: string;
-  ngo: string;
-  titleImage: string | null; // Base64 Data URL for the primary image
-  secondaryImages: string[]; // Array of Base64 Data URLs for gallery
+  ngoPartnerId: string; 
+  titleImage: string | null; 
+  secondaryImages: string[]; 
   proofOfAuth: string | null; 
   isConfirmed: boolean;
 }
-
-// Mock NGO List (could be fetched from an API in a real app)
-const MOCK_NGOS = [
-  "Old Heritage Trust",
-  "Music For All",
-  "Children Art Fund",
-  "Healthcare Mission",
-  "Education for All",
-];
-
-// Helper to convert File to Base64 data URL
-const fileToBase64 = (file: File): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
-    reader.onerror = error => reject(error);
-    reader.readAsDataURL(file);
-  });
-};
 
 // Reusable Input Component (Kept for completeness)
 const FormInput: React.FC<any> = ({ id, label, required, as = 'input', children, ...rest }) => (
@@ -84,7 +72,17 @@ const FormInput: React.FC<any> = ({ id, label, required, as = 'input', children,
   </div>
 );
 
-// --- MODIFIED File/Image Upload Component for Previews ---
+// Helper function to convert File to Base64 data URL
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = error => reject(error);
+    reader.readAsDataURL(file);
+  });
+};
+
+// --- MODIFIED File/Image Upload Component for Previews (Kept for completeness) ---
 const FileUploadSection: React.FC<{ 
     label: string; 
     icon: React.ElementType;
@@ -124,7 +122,7 @@ const FileUploadSection: React.FC<{
             <button 
                 type="button" 
                 onClick={() => onFileRemove(url)}
-                className="absolute top-0 right-0 bg-red-500 text-white p-1 rounded-bl-lg opacity-0 group-hover:opacity-100 transition"
+                className="absolute top-0 right-0 bg-red-500/80 text-white p-1 rounded-bl-lg opacity-0 group-hover:opacity-100 transition"
                 aria-label="Remove file"
             >
                 <Trash2 size={16} />
@@ -187,6 +185,11 @@ const FileUploadSection: React.FC<{
 
 export default function CreateAuctionPage() {
   const router = useRouter();
+  
+  // --- NEW STATE for NGO list ---
+  const [ngoOptions, setNgoOptions] = useState<NgoOption[]>([]);
+  // ------------------------------
+  
   const [formData, setFormData] = useState<AuctionFormData>({
     title: "",
     category: "Art",
@@ -198,7 +201,7 @@ export default function CreateAuctionPage() {
     buyNowPrice: "",
     startDate: "",
     endDate: "",
-    ngo: MOCK_NGOS[0],
+    ngoPartnerId: "", 
     titleImage: null, 
     secondaryImages: [], 
     proofOfAuth: null, 
@@ -206,22 +209,48 @@ export default function CreateAuctionPage() {
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [ngoLoading, setNgoLoading] = useState(true); // NEW STATE
+
+  // --- MODIFIED: Fetch NGO List on Mount with corrected URL ---
+  useEffect(() => {
+    async function fetchNgos() {
+        try {
+            // CORRECTED: Use the correct path /api/ngo/list
+            const res = await fetch("/api/ngo/list"); 
+            
+            if (!res.ok) {
+                const errorData = await res.json().catch(() => ({ error: "Unknown API error or server crash" }));
+                console.error("API Call Failed: /api/ngo/list. Status:", res.status, "Error:", errorData.error);
+                throw new Error("Failed to fetch NGO list.");
+            }
+            
+            const data: NgoOption[] = await res.json();
+            setNgoOptions(data);
+            
+            // Set the default NGO to the first one fetched
+            if (data.length > 0) {
+                setFormData(prev => ({ ...prev, ngoPartnerId: data[0].id }));
+            } else {
+                setError("No NGO partners found in the database. Please register an NGO first.");
+            }
+
+        } catch (e: any) {
+            console.error("Error fetching NGOs:", e.message);
+            setError("Could not load NGO list for the dropdown. Please check console for details.");
+        } finally {
+            setNgoLoading(false);
+        }
+    }
+    fetchNgos();
+  }, []);
+  // ------------------------------------------------------------------
+
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
   
-  // Helper to convert File to Base64 data URL
-  const fileToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = error => reject(error);
-      reader.readAsDataURL(file);
-    });
-  };
-
-  // --- HANDLERS FOR PRIMARY IMAGE ---
+  // --- HANDLERS FOR PRIMARY IMAGE (Kept for completeness) ---
   const handleTitleImageSelect = async (files: File[]) => {
     if (files.length === 0) return;
     try {
@@ -236,9 +265,8 @@ export default function CreateAuctionPage() {
     setFormData(prev => ({ ...prev, titleImage: null }));
   }, []);
 
-  // --- HANDLERS FOR SECONDARY IMAGES ---
+  // --- HANDLERS FOR SECONDARY IMAGES (Kept for completeness) ---
   const handleSecondaryImagesSelect = async (files: File[]) => {
-    // Basic max file check for instant feedback
     if (formData.secondaryImages.length + files.length > 4) {
         setError("You can only upload a maximum of 4 secondary images.");
         return;
@@ -255,7 +283,7 @@ export default function CreateAuctionPage() {
     setFormData(prev => ({ ...prev, secondaryImages: prev.secondaryImages.filter(url => url !== dataUrlToRemove) }));
   }, []);
 
-  // --- HANDLERS FOR AUTH PROOF ---
+  // --- HANDLERS FOR AUTH PROOF (Kept for completeness) ---
   const handleProofSelect = async (files: File[]) => {
     try {
         const base64Url = await fileToBase64(files[0]);
@@ -269,7 +297,7 @@ export default function CreateAuctionPage() {
     setFormData(prev => ({ ...prev, proofOfAuth: null }));
   }, []);
 
-
+  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(""); 
@@ -291,6 +319,10 @@ export default function CreateAuctionPage() {
         setError("You must upload a Title Image.");
         return;
     }
+    if (!formData.ngoPartnerId) { // Check that an NGO is selected
+        setError("Please select a partner NGO.");
+        return;
+    }
     
     // API Validation Check
     const numericBid = Number(formData.startingPrice);
@@ -308,9 +340,11 @@ export default function CreateAuctionPage() {
       description: formData.detailedDescription,
       endDate: formData.endDate,
       titleImage: formData.titleImage,
+      ngoPartnerId: formData.ngoPartnerId,
     };
 
     try {
+      // API call to create the auction
       const res = await fetch("/api/auctions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -321,22 +355,17 @@ export default function CreateAuctionPage() {
 
       if (!res.ok) {
         let errorMessage = data.error || "Failed to create auction. Please try again.";
-        
-        // --- START ENHANCED ERROR MESSAGING ---
         if (res.status === 403) {
             errorMessage = "ACCESS DENIED: Only a logged-in 'Celebrity' account can create auctions.";
         } else if (res.status === 400 && data.error && data.error.includes("Missing required fields")) {
              errorMessage = "Missing required fields: Check Title, Starting Price, and End Date.";
         }
-        // --- END ENHANCED ERROR MESSAGING ---
-        
         throw new Error(errorMessage);
       }
 
       alert("Auction created successfully! Redirecting to auctions.");
       router.push("/auction");
     } catch (err: any) {
-      // This is the message that will be displayed in the red box
       setError(err.message);
     }
     setLoading(false);
@@ -360,17 +389,15 @@ export default function CreateAuctionPage() {
 
         <form onSubmit={handleSubmit}>
             
-            {/* E. IMAGES (MODIFIED TO BE LEFT/RIGHT GRID) */}
+            {/* E. IMAGES */}
             <section className="border-b border-gray-100 pb-8 mb-8">
                 <div className="flex items-center gap-3 mb-6">
                     <ImageIcon size={24} className="text-[#D9A441]" />
                     <h2 className="text-xl font-bold text-[#22163F]">Product Images & Gallery</h2>
                 </div>
                 
-                {/* NEW GRID CONTAINER for Left/Right Alignment */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     
-                    {/* LEFT COLUMN: TITLE / PRIMARY IMAGE */}
                     <div className="p-4 border border-gray-100 rounded-xl bg-gray-50 h-full flex flex-col"> 
                         <h3 className="font-semibold text-base mb-2 text-[#22163F]">Title Image (Primary)</h3>
                         <p className="text-xs text-gray-500 mb-4 flex-shrink-0">This image will be used for listings and banners. Only one image allowed.</p>
@@ -386,7 +413,6 @@ export default function CreateAuctionPage() {
                         />
                     </div>
 
-                    {/* RIGHT COLUMN: SECONDARY / GALLERY IMAGES */}
                     <div className="p-4 border border-gray-100 rounded-xl bg-gray-50 h-full flex flex-col">
                         <h3 className="font-semibold text-base mb-2 text-[#22163F]">Gallery Images (Secondary)</h3>
                         <p className="text-xs text-gray-500 mb-4 flex-shrink-0">Up to 4 additional photos for the auction gallery.</p>
@@ -524,7 +550,7 @@ export default function CreateAuctionPage() {
                         id="endDate" 
                         label="End Date & Time" 
                         type="datetime-local"
-                        min={formData.startDate} // Basic validation
+                        min={formData.startDate} 
                         value={formData.endDate}
                         onChange={handleChange}
                         required
@@ -532,26 +558,46 @@ export default function CreateAuctionPage() {
                 </div>
             </section>
 
-            {/* D. NGO / CAUSE */}
+            {/* D. NGO / CAUSE - NOW DYNAMICALLY POPULATED */}
             <section className="border-b border-gray-100 pb-8 mb-8">
                 <div className="flex items-center gap-3 mb-4">
                     <Handshake size={24} className="text-[#D9A441]" />
                     <h2 className="text-xl font-bold text-[#22163F]">NGO / Cause</h2>
                 </div>
                 
-                <FormInput 
-                    id="ngo" 
-                    label="Select NGO Partner" 
-                    as="select"
-                    value={formData.ngo}
-                    onChange={handleChange}
-                    required
-                >
-                    {MOCK_NGOS.map(ngo => (
-                        <option key={ngo} value={ngo}>{ngo}</option>
-                    ))}
-                </FormInput>
+                {/* MODIFIED LOADING/ERROR DISPLAY */}
+                {ngoLoading ? (
+                    <div className="text-sm text-gray-500 p-3 rounded-xl border bg-gray-50">Loading NGO partners...</div>
+                ) : error.includes("NGO list") ? (
+                    <div className="text-sm text-red-600 p-3 rounded-xl border border-red-300 bg-red-50">{error}</div>
+                ) : (
+                    <FormInput 
+                        id="ngoPartnerId" 
+                        name="ngoPartnerId" 
+                        label="Select NGO Partner" 
+                        as="select"
+                        value={formData.ngoPartnerId}
+                        onChange={handleChange}
+                        required
+                    >
+                        {/* Only render options if NGOs are found */}
+                        {ngoOptions.length > 0 ? (
+                            ngoOptions.map(ngo => (
+                                <option key={ngo.id} value={ngo.id}>{ngo.name}</option> 
+                            ))
+                        ) : (
+                            <option value="">No NGOs found</option>
+                        )}
+                    </FormInput>
+                )}
 
+                {/* Additional instruction for the user if the list is empty */}
+                {!ngoLoading && ngoOptions.length === 0 && !error.includes("NGO list") && (
+                    <p className="text-sm text-gray-600 mt-2 p-3 rounded-xl border border-yellow-200 bg-yellow-50">
+                        No NGOs available. Please register one or check the database.
+                    </p>
+                )}
+                
                 <p className="text-xs text-gray-500 mt-2 p-3 rounded-lg bg-yellow-50 border border-yellow-200">
                     <Plus size={12} className="inline-block mr-1 text-yellow-600" /> All listed NGOs are verified partners, ensuring maximum impact transparency.
                 </p>
@@ -572,7 +618,7 @@ export default function CreateAuctionPage() {
                     onFileRemove={handleProofRemove}
                     allowMultiple={false}
                     currentPreviews={formData.proofOfAuth ? [formData.proofOfAuth] : []}
-                    fileTypes=".pdf,.doc,.docx" // Allow document types
+                    fileTypes=".pdf,.doc,.docx" 
                 />
 
                 <label className="flex items-start gap-3 mt-4 cursor-pointer">
@@ -592,12 +638,12 @@ export default function CreateAuctionPage() {
                 </label>
             </section>
 
-            {error && <p className="text-red-600 text-sm text-center mb-4 p-3 rounded-lg border border-red-300 bg-red-50">{error}</p>}
+            {error && !error.includes("NGO list") && <p className="text-red-600 text-sm text-center mb-4 p-3 rounded-lg border border-red-300 bg-red-50">{error}</p>}
 
             {/* G. SUBMIT */}
             <button 
                 type="submit" 
-                disabled={loading || !formData.isConfirmed || !formData.titleImage}
+                disabled={loading || !formData.isConfirmed || !formData.titleImage || !formData.ngoPartnerId}
                 className="w-full mt-2 py-3 rounded-xl flex items-center justify-center gap-2 bg-[#D9A441] hover:bg-[#C8943D] text-[#22163F] font-extrabold disabled:bg-gray-400 disabled:text-gray-600 transition"
             >
                 <Plus size={20} /> {loading ? "Submitting Auction..." : "Launch Auction Now"}

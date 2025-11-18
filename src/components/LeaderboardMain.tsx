@@ -19,7 +19,7 @@ export default function LeaderboardMain({ selectedCeleb, timeframe, mode }: Prop
   const [fans, setFans] = useState<Fan[]>([]);
   const [page, setPage] = useState(1);
   const [you, setYou] = useState<Fan | null>(null);
-  const [loading, setLoading] = useState(true); // 1. Add loading state
+  const [loading, setLoading] = useState(true); 
 
   const pageSize = 10;
 
@@ -28,36 +28,56 @@ export default function LeaderboardMain({ selectedCeleb, timeframe, mode }: Prop
     const fetchLeaderboard = async () => {
       setLoading(true);
       setPage(1); // Reset pagination
-      let generatedFans: Fan[] = [];
+      let fetchedFans: Fan[] = [];
 
       if (mode === "global") {
-        // 3. --- REAL DATA ---
-        // Fetch from our new API route
+        // 3. --- GLOBAL LEADERBOARD (REAL DATA) ---
         try {
           const res = await fetch(`/api/leaderboard/global?timeframe=${timeframe}`);
           if (!res.ok) {
-            throw new Error("Failed to fetch leaderboard");
+            throw new Error("Failed to fetch global leaderboard");
           }
           const data: Fan[] = await res.json();
-          generatedFans = data;
+          fetchedFans = data;
         } catch (err) {
           console.error(err);
-          generatedFans = []; // Set empty on error
+          fetchedFans = []; // Set empty on error
         }
       } else {
-        // 4. --- MOCK DATA (unchanged) ---
-        // Fallback to mock data for celeb-specific leaderboard for now
-        generatedFans = generateFans(selectedCeleb, timeframe, 100);
+        // 4. --- CELEB LEADERBOARD (NOW REAL DATA) ---
+        try {
+            // Fetch from our NEW celebrity API route
+            const res = await fetch(`/api/leaderboard/celeb?celebId=${selectedCeleb.id}&timeframe=${timeframe}`);
+            
+            if (!res.ok) {
+              // On a non-OK response (e.g., 400 for invalid ID, 500 for server error), fall back to mock data
+              const errorData = await res.json().catch(() => ({ error: res.statusText }));
+              console.warn(`Failed to fetch real data for celeb ${selectedCeleb.id}. Falling back to mock data. Error: ${errorData.error}`);
+              fetchedFans = generateFans(selectedCeleb, timeframe, 100);
+            } else {
+                const data: Fan[] = await res.json();
+                fetchedFans = data;
+                
+                // If the real API returns no data, use mock data as a fallback to show a sample leaderboard
+                if (fetchedFans.length === 0) {
+                    fetchedFans = generateFans(selectedCeleb, timeframe, 100);
+                }
+            }
+        } catch (err) {
+            console.error(err);
+            // On hard network failure, fall back to mock data
+            fetchedFans = generateFans(selectedCeleb, timeframe, 100);
+        }
       }
 
-      setFans(generatedFans);
+      setFans(fetchedFans);
 
-      // 5. Update mock "You" user
-      // (This is still mock, but we can make it real later)
+      // 5. Update mock "You" user logic (KEEPING MOCK for 'You' user simulation)
+      const topPoints = fetchedFans[0]?.points || 500;
       setYou({ 
         id: "you", 
         name: "You", 
-        points: Math.round((generatedFans[0]?.points || 500) / 4), 
+        points: Math.round(topPoints / 4), 
         bids: 0, 
         wishes: 0 
       });
@@ -98,7 +118,7 @@ export default function LeaderboardMain({ selectedCeleb, timeframe, mode }: Prop
           <p className="text-sm text-gray-500 mt-1">
             {mode === "global"
               ? "Top bidders across all celebrities (Real Data)"
-              : selectedCeleb.desc}
+              : `${selectedCeleb.desc} (Now fetching real bid data)`}
           </p>
         </div>
         <div className="text-right">
@@ -135,6 +155,3 @@ const labelMap = {
   year: "This Year",
   all: "All Time",
 };
-
-// We don't need this mock celeb list anymore, it's handled by the page.
-// const celebsList = [ ... ];

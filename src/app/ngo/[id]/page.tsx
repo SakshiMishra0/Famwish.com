@@ -1,18 +1,32 @@
 // src/app/ngo/[id]/page.tsx
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, User } from "lucide-react";
 import clientPromise from "@/lib/mongodb";
 import { ObjectId } from "mongodb";
 import { NgoPost } from "@/types";
 import PostCard from "@/components/PostCard";
-import NgoProfileActions from "@/components/NgoProfileActions"; // <-- NEW IMPORT
+import NgoProfileActions from "@/components/NgoProfileActions";
 
 // Helper to format currency
 const formatINR = (n: number) =>
   "₹" + Number(n || 0).toLocaleString("en-IN");
 
-// --- Data Interfaces (kept for context) ---
+// --- Data Interfaces ---
+interface Donor {
+    userId: string;
+    donor: string;
+    amt: number;
+    profilePicture: string | null;
+}
+
+interface AuctionListing {
+    _id: string;
+    title: string;
+    bid: string;
+    titleImage?: string | null;
+}
+
 interface LedgerBlock {
     index: number;
     timestamp: string;
@@ -56,7 +70,7 @@ async function getNgoData(id: string): Promise<NgoData | null> {
 
         if (!user) return null;
 
-        // 2. Mock Ledger Data (since a dedicated ledger DB isn't set up yet)
+        // 2. Mock Ledger Data (unchanged)
         const mockLedger: LedgerBlock[] = [
             { index: 0, timestamp: new Date().toISOString(), type: "genesis", amount: 0, donor: "system", note: "Genesis block", prevHash: "0", hash: "a0a0a0" },
             { index: 1, timestamp: new Date(Date.now() - 86400000).toISOString(), type: "donation", amount: 5000, donor: "Aarav", note: "Back-to-school kits", prevHash: "a0a0a0", hash: "b1b1b1" },
@@ -91,10 +105,8 @@ async function getNgoPosts(ngoId: string): Promise<NgoPost[]> {
 
     const apiURL = `${baseUrl}/api/ngo/posts?ngoId=${ngoId}`;
     try {
-        // Fetch posts for this specific NGO
         const res = await fetch(apiURL, { cache: 'no-store' });
         if (!res.ok) {
-            // Log the error but continue with an empty array
             console.error(`Failed to fetch posts for ${ngoId}. Status: ${res.status}`);
             return [];
         }
@@ -106,6 +118,53 @@ async function getNgoPosts(ngoId: string): Promise<NgoPost[]> {
     }
 }
 
+async function getRecentNgoAuctions(ngoId: string): Promise<AuctionListing[]> {
+    const isDev = process.env.NODE_ENV === 'development';
+    const baseUrl = process.env.NEXTAUTH_URL || (isDev ? 'http://localhost:3000' : null);
+    
+    if (!baseUrl) return [];
+
+    const apiURL = `${baseUrl}/api/auctions?ngoPartnerId=${ngoId}&limit=3`; 
+    
+    try {
+        const res = await fetch(apiURL, { cache: 'no-store' });
+        if (!res.ok) {
+            console.error(`Failed to fetch auctions for NGO ${ngoId}. Status: ${res.status}`);
+            return [];
+        }
+        const data: AuctionListing[] = await res.json();
+        return data.slice(0, 3);
+    } catch (e) {
+        console.error("Error fetching NGO auctions:", e);
+        return [];
+    }
+}
+
+// --- NEW: Data Fetching Function for Top Donors ---
+async function getTopDonors(ngoId: string): Promise<Donor[]> {
+    const isDev = process.env.NODE_ENV === 'development';
+    const baseUrl = process.env.NEXTAUTH_URL || (isDev ? 'http://localhost:3000' : null);
+    
+    if (!baseUrl) return [];
+
+    // Use the NEW API endpoint
+    const apiURL = `${baseUrl}/api/ngo/${ngoId}/donors`; 
+    
+    try {
+        const res = await fetch(apiURL, { cache: 'no-store' });
+        if (!res.ok) {
+            console.error(`Failed to fetch donors for NGO ${ngoId}. Status: ${res.status}`);
+            return [];
+        }
+        const data: Donor[] = await res.json();
+        return data;
+    } catch (e) {
+        console.error("Error fetching NGO top donors:", e);
+        return [];
+    }
+}
+
+
 // --- Main Page Component ---
 export default async function NgoProfilePage({ params }: Props) {
     const resolvedParams = await params;
@@ -116,32 +175,18 @@ export default async function NgoProfilePage({ params }: Props) {
     }
 
     // Fetch initial data in parallel
-    const [ngoData, recentPosts] = await Promise.all([
+    const [ngoData, recentPosts, recentAuctions, donorsLeaderboard] = await Promise.all([
         getNgoData(ngoId),
         getNgoPosts(ngoId),
+        getRecentNgoAuctions(ngoId),
+        getTopDonors(ngoId),
     ]);
 
     if (!ngoData) {
         return notFound();
     }
     
-    const { name, totalFunds, donorsCount, ledger } = ngoData;
-
-    // Derived values from the old file, now calculated with fetched data
-    const donorsLeaderboard = [
-        { donor: "Aarav", amt: 5000 },
-        { donor: "Samayran Singh", amt: 18546 },
-    ].sort((a, b) => b.amt - a.amt)
-     .slice(0, 6);
-
-    const recentAuctions = [
-        { title: "Signed Guitar", bid: 3800 },
-        { title: "Vintage Art", bid: 4300 },
-    ];
-    
-    // Reverse the ledger to show newest first for the list
-    const sortedLedger = ledger.slice().reverse();
-
+    const { name, totalFunds, donorsCount } = ngoData;
 
     return (
         <div className="min-h-screen bg-[#F6F3EC]">
@@ -201,8 +246,7 @@ export default async function NgoProfilePage({ params }: Props) {
                       </div>
                     </div>
 
-                    {/* HERO ACTIONS - REPLACED WITH CLIENT COMPONENT */}
-                    {/* Pass the ngoName so the component can use it in mock actions */}
+                    {/* HERO ACTIONS */}
                     <NgoProfileActions ngoName={name} />
                   </div>
                 </div>
@@ -224,50 +268,73 @@ export default async function NgoProfilePage({ params }: Props) {
                 
               </div>
 
-              {/* RIGHT SIDEBAR (Donors and Auctions - Ledger actions are now in NgoProfileActions) */}
+              {/* RIGHT SIDEBAR */}
               <aside className="flex flex-col gap-8 sticky top-6 h-fit">
 
-                {/* LEDGER/ACTION CARD CONTENT (The new NgoProfileActions component includes the Ledger Card now) */}
+                {/* LEDGER/ACTION CARD CONTENT */}
                 <NgoProfileActions ngoName={name} />
 
                 {/* DONORS + AUCTIONS (Combined Block) */}
                 <div className="bg-white rounded-2xl shadow-xl border border-[#E8E3DB] p-5">
-                    <h3 className="text-[#22163F] font-semibold text-xl mb-4">Top Donors (Mock)</h3>
+                    <h3 className="text-[#22163F] font-semibold text-xl mb-4">Top Donors</h3>
                     <div className="flex flex-col gap-3 border-b pb-4 mb-4">
-                        {donorsLeaderboard.map((d) => (
-                            <div
-                            key={d.donor}
-                            className="flex items-center gap-3 px-2 py-1 rounded-lg"
-                            >
-                            <div className="w-10 h-10 rounded-full bg-gray-300" />
-                            <div>
-                                <div className="font-semibold text-[#22163F] text-sm">
-                                {d.donor}
+                        {/* --- MODIFIED: Use fetched donorsLeaderboard --- */}
+                        {donorsLeaderboard.length > 0 ? (
+                            donorsLeaderboard.map((d) => (
+                                <div
+                                key={d.userId}
+                                className="flex items-center gap-3 px-2 py-1 rounded-lg"
+                                >
+                                <div className="w-10 h-10 rounded-full bg-gray-300 overflow-hidden flex-shrink-0 flex items-center justify-center">
+                                    {d.profilePicture ? (
+                                        <img src={d.profilePicture} alt={d.donor} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <User size={18} className="text-white" />
+                                    )}
                                 </div>
-                                <div className="text-xs text-[#6B6B6B]">
-                                {formatINR(d.amt)} donated
+                                <div>
+                                    <div className="font-semibold text-[#22163F] text-sm">
+                                    {d.donor}
+                                    </div>
+                                    <div className="text-xs text-[#6B6B6B]">
+                                    {formatINR(d.amt)} donated
+                                    </div>
                                 </div>
-                            </div>
-                            </div>
-                        ))}
+                                </div>
+                            ))
+                        ) : (
+                            <p className="text-sm text-gray-500">No donor data yet.</p>
+                        )}
+                        {/* ----------------------------------------------- */}
                     </div>
 
                     <h3 className="text-[#22163F] font-semibold text-xl mb-4">Recent Auctions for {name}</h3>
                     <div className="mt-3 flex flex-wrap gap-3">
-                        {recentAuctions.map((a) => (
-                            <div
-                            key={a.title}
-                            className="border border-[#E8E3DB] rounded-xl p-3 min-w-[120px] bg-[#FAF9F7] shadow-sm flex-1"
-                            >
-                            <div className="h-16 rounded-md bg-gray-200" />
-                            <div className="font-semibold text-sm text-[#22163F] mt-2 leading-tight">
-                                {a.title}
-                            </div>
-                            <div className="text-xs text-[#6B6B6B]">
-                                {formatINR(a.bid)}
-                            </div>
-                            </div>
-                        ))}
+                        {recentAuctions.length > 0 ? (
+                            recentAuctions.map((a) => (
+                                <Link
+                                    key={a._id}
+                                    href={`/auction/${a._id}`}
+                                    className="border border-[#E8E3DB] rounded-xl p-3 min-w-[120px] bg-[#FAF9F7] shadow-sm flex-1 hover:bg-white transition"
+                                >
+                                    <div className="h-16 rounded-md bg-gray-200 overflow-hidden">
+                                        {a.titleImage ? (
+                                            <img src={a.titleImage} alt={a.title} className="w-full h-full object-cover" />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center text-xs text-gray-500">Item</div>
+                                        )}
+                                    </div>
+                                    <div className="font-semibold text-sm text-[#22163F] mt-2 leading-tight">
+                                        {a.title}
+                                    </div>
+                                    <div className="text-xs text-[#6B6B6B]">
+                                        {a.bid}
+                                    </div>
+                                </Link>
+                            ))
+                        ) : (
+                            <p className="text-sm text-gray-500 p-3 w-full">No active auctions for this NGO.</p>
+                        )}
                     </div>
                 </div>
 
