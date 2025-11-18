@@ -2,7 +2,7 @@
 import clientPromise from "@/lib/mongodb";
 import { ObjectId, Document } from "mongodb";
 import { notFound } from "next/navigation";
-import Link from "next/link"; // <--- FIX: ADDED MISSING IMPORT
+import Link from "next/link"; // <--- FIX: Ensure Link is imported
 
 // --- New Interface for Auction List used as Fulfilled Wishes (unchanged) ---
 interface AuctionList extends Document {
@@ -30,6 +30,16 @@ export interface Philanthropist {
   username: string;
   amount: number; // Total raised
   wishes: number; // Wishes fulfilled (auctions created)
+}
+// ------------------------------------
+
+// --- NEW Interface for Activity ---
+interface ActivityItem {
+    id: string;
+    text: string;
+    ago: string;
+    link: string;
+    icon: 'auction' | 'bid';
 }
 // ------------------------------------
 
@@ -244,6 +254,44 @@ async function getRecommendedCelebs(currentUserId: string): Promise<Philanthropi
 }
 // -----------------------------------------------------------------------------
 
+// --- NEW: Data Fetching Function for Celebrity Activity ---
+async function getCelebrityActivity(id: string): Promise<ActivityItem[]> {
+    const isDev = process.env.NODE_ENV === 'development';
+    const baseUrl = process.env.NEXTAUTH_URL || (isDev ? 'http://localhost:3000' : null);
+    
+    if (!baseUrl) return [];
+
+    const apiURL = `${baseUrl}/api/auctions?createdBy=${id}`; 
+    
+    try {
+        // Fetch all auctions created by this celebrity
+        const res = await fetch(apiURL, { cache: 'no-store' });
+        if (!res.ok) {
+            console.error(`Failed to fetch all auctions for creator ${id}. Status: ${res.status}`);
+            return [];
+        }
+        
+        const data: any[] = await res.json();
+
+        // Map the auction data into a generic activity feed format
+        const activityFeed: ActivityItem[] = data
+            .slice(0, 5) // Limit to the most recent 5 events
+            .map(auc => ({
+                id: auc._id,
+                text: `Launched new auction: ${auc.title}`,
+                ago: timeAgo(auc.createdAt), // Assuming the API result includes createdAt
+                link: `/auction/${auc._id}`,
+                icon: 'auction' as const, 
+            }));
+
+        return activityFeed;
+
+    } catch (e) {
+        console.error("Error fetching celebrity activity:", e);
+        return [];
+    }
+}
+// ------------------------------------------------------------------------------------------
 
 // Helper to calculate time ago string (Unchanged)
 function timeAgo(dateString: string): string {
@@ -265,13 +313,14 @@ export default async function ProfilePage({ params }: Props) {
   const id = resolvedParams.id as string;
 
   // 5. Fetch all needed data in parallel
-  const [userData, userStats, fulfilledWishes, activeAuctions, topFans, recommendedCelebs] = await Promise.all([
+  const [userData, userStats, fulfilledWishes, activeAuctions, topFans, recommendedCelebs, celebrityActivity] = await Promise.all([
     getUserData(id),
     getUserStats(id),
     getFulfilledWishes(id),
     getActiveAuctions(id),
     getTopFans(id),
     getRecommendedCelebs(id), 
+    getCelebrityActivity(id), // <--- ADDED
   ]);
 
   if (!userData) {
@@ -279,10 +328,7 @@ export default async function ProfilePage({ params }: Props) {
   }
 
   // --- Mock Data (for remaining sections we haven't implemented yet) ---
-  const activity = [
-    { text: "Mock: Fulfilled: School Supplies", ago: "2 months ago" },
-    { text: "Mock: Bid: $340 on Vintage Art", ago: "10 hours ago" },
-  ];
+  // The activity section uses real data now (celebrityActivity)
   // --- End Mock Data ---
 
 
@@ -372,8 +418,7 @@ export default async function ProfilePage({ params }: Props) {
       <div>
         <div className="rounded-2xl bg-white px-8 py-7 shadow-sm border border-[#E8E3DB]">
           <div className="flex justify-between items-start">
-            {/* Mock Rank/Donors */}
-            <h2 className="text-xl font-bold">Activity & Impact (Mock)</h2>
+            <h2 className="text-xl font-bold">Activity & Impact</h2>
             <div className="text-right">
               <p className="font-semibold text-sm">Rank #4</p>
               <p className="text-xs text-gray-500">Top donors this month</p>
@@ -383,18 +428,28 @@ export default async function ProfilePage({ params }: Props) {
             Recent activity, contributions and auctions hosted by {userData.name}.
           </p>
 
-          {/* Recent Activity (Mock) */}
-          <h3 className="mt-6 mb-3 text-lg font-bold">Recent Activity (Mock)</h3>
+          {/* Recent Activity - NOW REAL DATA LIST */}
+          <h3 className="mt-6 mb-3 text-lg font-bold">Recent Activity</h3>
           <div className="space-y-4">
-            {activity.map((item, i) => (
-              <div key={i} className="flex items-center gap-4 rounded-xl p-3 bg-[#FBFAF8] border">
-                <div className="h-12 w-12 bg-gray-200 rounded-xl" />
-                <div>
-                  <p className="text-sm font-semibold">{item.text}</p>
-                  <p className="text-xs text-gray-500">{item.ago}</p>
-                </div>
-              </div>
-            ))}
+            {celebrityActivity.length > 0 ? (
+                celebrityActivity.map((item) => (
+                  <Link 
+                    key={item.id} 
+                    href={item.link}
+                    className="flex items-center gap-4 rounded-xl p-3 bg-[#FBFAF8] border hover:shadow-md transition"
+                  >
+                    <div className="h-12 w-12 bg-yellow-100 rounded-xl flex items-center justify-center">
+                        <span className="text-yellow-600 text-xl">🚀</span>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold">{item.text}</p>
+                      <p className="text-xs text-gray-500">{item.ago}</p>
+                    </div>
+                  </Link>
+                ))
+            ) : (
+                <p className="text-sm text-gray-500">No recent auction activity.</p>
+            )}
           </div>
 
           {/* Auctions - REAL DATA LIST (Unchanged) */}
@@ -421,7 +476,7 @@ export default async function ProfilePage({ params }: Props) {
             )}
           </div>
 
-          {/* Recommended Philanthropists - NOW REAL DATA LIST */}
+          {/* Recommended Philanthropists - REAL DATA LIST (Unchanged) */}
           <h3 className="mt-10 mb-3 text-lg font-bold">Recommended Philanthropists</h3>
           <div className="flex flex-wrap gap-4">
             {recommendedCelebs.length > 0 ? (

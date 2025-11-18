@@ -8,7 +8,7 @@ import UserAvatar from "@/components/UserAvatar";
 import Link from "next/link"; 
 import { TrendingUp, DollarSign, Hand, Clock } from "lucide-react"; 
 
-// --- NEW Interface for Activity ---
+// --- NEW Interface for Activity (Unchanged) ---
 interface UserActivity {
     type: "bid";
     auctionId: string;
@@ -19,7 +19,7 @@ interface UserActivity {
 }
 // ----------------------------
 
-// --- Interface for Stats (Unchanged) ---
+// --- Interface for Stats (Modified to correctly reflect all three stats) ---
 interface UserStats {
     totalRaised: number;
     wishesFulfilled: number;
@@ -38,10 +38,10 @@ interface Auction {
 }
 // ----------------------------------------
 
-// Helper to format INR
+// Helper to format INR (Unchanged)
 const formatINR = (n: number) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 
-// Helper to format time ago
+// Helper to format time ago (Unchanged)
 const formatTimeAgo = (isoString: string): string => {
     const now = new Date();
     const past = new Date(isoString);
@@ -150,7 +150,7 @@ function CelebrityAuctionsList({ userId }: { userId: string }) {
 // --- END Helper Component ---
 
 
-// --- NEW: Component to list the bidder's recent activity ---
+// --- Component to list the bidder's recent activity (Unchanged, copied for completeness) ---
 function BidderActivityList() {
     const [activity, setActivity] = useState<UserActivity[]>([]);
     const [loading, setLoading] = useState(true);
@@ -193,7 +193,6 @@ function BidderActivityList() {
                     activity.map((item) => (
                         <Link 
                             href={`/auction/${item.auctionId}`} 
-                            // Use a unique key based on auctionId and timestamp to handle multiple bids on the same auction
                             key={item.auctionId + item.timestamp} 
                             className="flex items-center gap-4 rounded-xl p-3 bg-white border shadow-sm hover:shadow-md transition"
                         >
@@ -233,16 +232,14 @@ export default function MyProfilePage() {
   const { data: session, status } = useSession();
   const router = useRouter(); 
   
+  // MODIFIED: State to initialize all three stats
   const [userStats, setUserStats] = useState<UserStats>({
       totalRaised: 0,
       wishesFulfilled: 0,
       ngosSupported: 0,
   });
 
-  const formatINR = (n: number) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
-
-
-  // --- Fetch stats and handle redirection (Unchanged) ---
+  // --- Fetch stats and handle redirection (Modified to fetch ngosSupported) ---
   useEffect(() => {
     if (status === "loading") return;
     
@@ -255,11 +252,12 @@ export default function MyProfilePage() {
         const res = await fetch("/api/profile/stats");
         if (res.ok) {
             const data = await res.json();
-            setUserStats(prev => ({
-                ...prev,
+            // Update all three stats based on the response
+            setUserStats({
                 totalRaised: data.totalRaised || 0,
                 wishesFulfilled: data.wishesFulfilled || 0,
-            }));
+                ngosSupported: data.ngosSupported || 0, // <-- NEW STAT
+            });
         } else {
             console.error("Failed to fetch user stats.");
         }
@@ -291,7 +289,7 @@ export default function MyProfilePage() {
     <>
       <div className="pt-10 grid gap-8 md:grid-cols-[1.1fr_1.4fr]">
         
-        {/* LEFT PANEL (Unchanged) */}
+        {/* LEFT PANEL */}
         <div>
           <div className="rounded-2xl bg-white p-6 shadow-sm border border-[#E8E3DB]">
             
@@ -310,7 +308,7 @@ export default function MyProfilePage() {
               This is your personal profile page. You can update your bio here.
             </p>
 
-            {/* Stats - NOW REAL DATA */}
+            {/* Stats - NOW ALL REAL DATA */}
             <div className="grid grid-cols-3 gap-3 mt-5 text-center text-sm">
               <div className="rounded-xl bg-[#FAF9F7] py-3 border border-[#E8E3DB]">
                 <p className="font-bold">{formatINR(userStats.totalRaised)}</p>
@@ -321,7 +319,8 @@ export default function MyProfilePage() {
                 <p className="text-xs text-gray-600">Wishes fulfilled</p>
               </div>
               <div className="rounded-xl bg-[#FAF9F7] py-3 border border-[#E8E3DB]">
-                <p className="font-bold">{userStats.ngosSupported}</p>
+                {/* DISPLAY THE NEW REAL STAT */}
+                <p className="font-bold">{userStats.ngosSupported}</p> 
                 <p className="text-xs text-gray-600">NGOs supported</p>
               </div>
             </div>
@@ -345,15 +344,13 @@ export default function MyProfilePage() {
           </div>
         </div>
 
-        {/* RIGHT PANEL (Your activity) - MODIFIED */}
+        {/* RIGHT PANEL (Your activity) */}
         <div>
           <div className="rounded-2xl bg-white px-8 py-7 shadow-sm border border-[#E8E3DB]">
             
             {isCelebrity ? (
-                 // Celebrities see their created auctions
                  <CelebrityAuctionsList userId={user.id} /> 
             ) : (
-                // Bidders see their recent bids
                 <BidderActivityList /> 
             )}
 
