@@ -1,13 +1,4 @@
-import { Celeb } from "@/types";
-
-export interface Fan {
-  id: string;
-  name: string;
-  points: number;
-  bids: number;
-  wishes: number;
-  celebName?: string; // for global leaderboard
-}
+import { Celeb, Fan } from "@/types";
 
 export function generateFans(celeb: Celeb, timeframe: string, count = 60): Fan[] {
   const baseScores = {

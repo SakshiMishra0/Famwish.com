@@ -6,6 +6,16 @@ export interface Celeb {
   followers: number;
 }
 
+// Moved from src/lib/generateFans.ts to be project-wide
+export interface Fan {
+  id: string;
+  name: string;
+  points: number;
+  bids: number;
+  wishes: number;
+  celebName?: string; // for global leaderboard
+}
+
 export interface NgoPost {
   _id: string;
   ngoId: string;
