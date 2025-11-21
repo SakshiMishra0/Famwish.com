@@ -37,8 +37,11 @@ async function getTopAuctions(): Promise<Auction[]> {
 
     const auctions = await db
       .collection("auctions")
-      .find({ endDate: { $gt: now } })
-      .sort({ endDate: 1 })
+      .find({ endDate: { $gt: now } }) // Only show auctions whose end date is in the future (LIVE auctions)
+      // --- START FIX ---
+      // Changed sort from { endDate: 1 } (ending soonest) to { currentHighBid: -1 } (highest value)
+      .sort({ currentHighBid: -1 }) 
+      // --- END FIX ---
       .limit(2)
       // Project the required fields. 
       .project({ _id: 1, title: 1, bid: 1, bids: 1, endDate: 1, titleImage: 1 }) 
@@ -153,7 +156,7 @@ export default async function HomePage() {
         <p className="mt-3 text-lg text-[#6A6674]">
           Discover verified NGOs and meaningful auctions that change lives.
         </p>
-        <SearchBar />
+        <SearchBar mode="global" />
         <div className="mt-4 flex flex-wrap gap-3 text-sm">
           {[
             "Trending", "Art", "Experiences", "Merchandise",

@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback, Suspense } from "react";
 import Link from "next/link";
-import { Heart } from "lucide-react";
+import { Heart, Clock } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useSearchParams } from "next/navigation";
 import SearchBar from "@/components/SearchBar";
@@ -26,6 +26,10 @@ interface SidebarAuction {
     titleImage?: string | null;
 }
 
+// --- NEW CONSTANT FOR LOCAL STORAGE ---
+const RECENTLY_VIEWED_KEY = 'famwish_recently_viewed';
+const MAX_RECENTLY_VIEWED = 3;
+// ------------------------------------
 
 // Wrapper component for Suspense
 export default function AuctionsPageWrapper() {
@@ -46,8 +50,11 @@ function AuctionsPage() {
   const [activeFilter, setActiveFilter] = useState("Popular");
 
   const [auctions, setAuctions] = useState<Auction[]>([]);
-  const [trending, setTrending] = useState<SidebarAuction[]>([]); // <--- NEW STATE
-  const [recommended, setRecommended] = useState<SidebarAuction[]>([]); // <--- NEW STATE
+  const [trending, setTrending] = useState<SidebarAuction[]>([]);
+  const [recommended, setRecommended] = useState<SidebarAuction[]>([]);
+  // --- NEW STATE ---
+  const [recentlyViewed, setRecentlyViewed] = useState<SidebarAuction[]>([]);
+  // -----------------
   const [wishlistedIds, setWishlistedIds] = useState<Set<string>>(new Set());
   
   const [loading, setLoading] = useState(true);
@@ -60,11 +67,48 @@ function AuctionsPage() {
 
   const filters = ["Popular", "Highest Bids", "Newest", "Ending Soon", "Recommended"];
   
-  // --- NEW: Fetch Trending Auctions (Simulated by filtering logic) ---
+  // --- NEW: Fetch Recently Viewed Auctions ---
+  const fetchRecentlyViewedAuctions = useCallback(async () => {
+      if (typeof window === 'undefined') return;
+      
+      try {
+          const viewedIds = JSON.parse(localStorage.getItem(RECENTLY_VIEWED_KEY) || '[]') as string[];
+          if (viewedIds.length === 0) return;
+          
+          // Fetch details for the first MAX_RECENTLY_VIEWED items
+          const recentAuctions: SidebarAuction[] = [];
+          
+          // This is a naive client-side solution, but works for the MVP
+          for (const id of viewedIds.slice(0, MAX_RECENTLY_VIEWED)) {
+              try {
+                  // Assuming /api/auctions/[id] returns the necessary fields
+                  const res = await fetch(`/api/auctions/${id}`);
+                  if (res.ok) {
+                      const data = await res.json();
+                      recentAuctions.push({
+                          _id: data._id,
+                          title: data.title,
+                          bid: data.bid,
+                          bids: data.bids,
+                          titleImage: data.titleImage,
+                      });
+                  }
+              } catch (e) {
+                  console.error(`Failed to fetch recent auction ${id}`, e);
+                  // Optionally clean up localStorage if fetch fails persistently
+              }
+          }
+          setRecentlyViewed(recentAuctions);
+          
+      } catch (e) {
+          console.error("Error fetching recently viewed auctions:", e);
+      }
+  }, []);
+  // -------------------------------------------
+
+  // Fetch Trending Auctions (Simulated by filtering logic)
   const fetchTrendingAuctions = useCallback(async () => {
       try {
-          // In a real application, this API would support a sort by 'bids' or 'recent activity'.
-          // For now, we fetch all and sort by bids client-side.
           const res = await fetch("/api/auctions");
           if (!res.ok) throw new Error("Failed to fetch trending data");
           
@@ -72,7 +116,7 @@ function AuctionsPage() {
           
           // Simulate "Trending" by taking the 3 auctions with the highest number of bids
           const trendingData = data
-            .slice() // create copy
+            .slice() 
             .sort((a, b) => b.bids - a.bids)
             .slice(0, 3)
             .map(a => ({
@@ -86,23 +130,19 @@ function AuctionsPage() {
           setTrending(trendingData);
       } catch (e) {
           console.error("Error fetching trending auctions:", e);
-          // Keep the trending list empty on error, no mock fallback
       }
   }, []);
-  // -----------------------------------------------------------------
 
-  // --- NEW: Fetch Recommended Auctions (Simulated) ---
+  // Fetch Recommended Auctions (Simulated)
   const fetchRecommendedAuctions = useCallback(async () => {
-      // In a functional app, this would use the user's history/wishlist to recommend.
-      // For now, we'll fetch a list and pick the newest three.
       try {
           const res = await fetch("/api/auctions");
           if (!res.ok) throw new Error("Failed to fetch recommended data");
           
           const data: Auction[] = await res.json();
           
-          // Simulate "Recommended" by taking the newest 3 auctions (assuming /api/auctions returns sorted by date DESC)
-          const recommendedData = data.slice(0, 3).map(a => ({
+          // Simulate "Recommended" by taking a random 3 auctions
+          const recommendedData = data.sort(() => 0.5 - Math.random()).slice(0, 3).map(a => ({
                 _id: a._id,
                 title: a.title,
                 bid: a.bid,
@@ -115,10 +155,9 @@ function AuctionsPage() {
           console.error("Error fetching recommended auctions:", e);
       }
   }, []);
-  // ---------------------------------------------------
 
 
-  // Main Data Fetching Effect
+  // Main Data Fetching Effect (MODIFIED to include recently viewed fetch)
   useEffect(() => {
     async function getAuctionsAndWishlist() {
       try {
@@ -162,18 +201,18 @@ function AuctionsPage() {
 
     getAuctionsAndWishlist();
     
-    // Fetch sidebar data after main data is loaded or in parallel
+    // Fetch all sidebar data in parallel/sequence
     fetchTrendingAuctions();
+    fetchRecentlyViewedAuctions(); // <-- NEW CALL
     if (session) {
         fetchRecommendedAuctions();
     } else {
-        // Clear recommended if logged out or if functionality doesn't exist
         setRecommended([]);
     }
     
-  }, [activeCategory, session, searchQuery, fetchTrendingAuctions, fetchRecommendedAuctions]);
+  }, [activeCategory, session, searchQuery, fetchTrendingAuctions, fetchRecommendedAuctions, fetchRecentlyViewedAuctions]); // Added fetchRecentlyViewedAuctions as dependency
 
-  // (handleWishlistToggle function is unchanged)
+  // handleWishlistToggle function (unchanged)
   const handleWishlistToggle = useCallback(async (auctionId: string, isCurrentlyWishlisted: boolean) => {
     if (!session) {
         alert("Please log in to update your wishlist.");
@@ -231,11 +270,36 @@ function AuctionsPage() {
     }
   }, [session]);
 
+  // Sidebar link render helper
+  const renderSidebarLinks = (items: SidebarAuction[]) => (
+      items.length > 0 ? (
+          items.map((item, i) => (
+              <Link href={`/auction/${item._id}`} key={item._id} className="flex items-center gap-3 hover:bg-gray-50 p-2 rounded-lg transition">
+                  <div className="h-12 w-12 rounded-lg bg-gray-200 overflow-hidden">
+                      {item.titleImage ? (
+                          <img src={item.titleImage} alt={item.title} className="w-full h-full object-cover" />
+                      ) : (
+                          <div className="w-full h-full bg-gray-200"></div>
+                      )}
+                  </div>
+                  <div>
+                  <p className="font-semibold text-sm">{item.title}</p>
+                  <p className="text-xs text-gray-500">
+                      {item.bid} · {item.bids} bids
+                  </p>
+                  </div>
+              </Link>
+          ))
+      ) : (
+          <p className="text-sm text-gray-500">No auctions available.</p>
+      )
+  );
+
   return (
     <div className="grid grid-cols-1 gap-10 px-10 py-10 lg:grid-cols-[2fr_0.9fr]">
 
       <div>
-        <SearchBar initialQuery={searchQuery} />
+        <SearchBar initialQuery={searchQuery} mode="global" />
 
         {/* CATEGORY PILLS */}
         <div className="flex flex-wrap items-center gap-3 mt-8">
@@ -354,27 +418,7 @@ function AuctionsPage() {
             🔥 Trending Auctions
           </h3>
           <div className="mt-4 flex flex-col gap-5">
-            {trending.length > 0 ? (
-                trending.map((item, i) => (
-                    <Link href={`/auction/${item._id}`} key={item._id} className="flex items-center gap-3 hover:bg-gray-50 p-2 rounded-lg transition">
-                        <div className="h-12 w-12 rounded-lg bg-gray-200 overflow-hidden">
-                            {item.titleImage ? (
-                                <img src={item.titleImage} alt={item.title} className="w-full h-full object-cover" />
-                            ) : (
-                                <div className="w-full h-full bg-gray-200"></div>
-                            )}
-                        </div>
-                        <div>
-                        <p className="font-semibold text-sm">{item.title}</p>
-                        <p className="text-xs text-gray-500">
-                            {item.bid} · {item.bids} bids
-                        </p>
-                        </div>
-                    </Link>
-                ))
-            ) : (
-                <p className="text-sm text-gray-500">No trending auctions available.</p>
-            )}
+            {renderSidebarLinks(trending)}
           </div>
         </div>
         
@@ -387,39 +431,29 @@ function AuctionsPage() {
                 Based on your preferences and activity.
             </p>
             <div className="mt-4 flex flex-col gap-5">
-            {recommended.length > 0 ? (
-                recommended.map((item, i) => (
-                    <Link href={`/auction/${item._id}`} key={item._id} className="flex items-center gap-3 hover:bg-gray-50 p-2 rounded-lg transition">
-                        <div className="h-12 w-12 rounded-lg bg-gray-200 overflow-hidden">
-                            {item.titleImage ? (
-                                <img src={item.titleImage} alt={item.title} className="w-full h-full object-cover" />
-                            ) : (
-                                <div className="w-full h-full bg-gray-200"></div>
-                            )}
-                        </div>
-                        <div>
-                        <p className="font-semibold text-sm">{item.title}</p>
-                        <p className="text-xs text-gray-500">
-                            {item.bid} · {item.bids} bids
-                        </p>
-                        </div>
-                    </Link>
-                ))
+              {renderSidebarLinks(recommended)}
+            </div>
+          </div>
+        )}
+        
+        {/* --- MODIFIED: RECENTLY VIEWED SECTION --- */}
+        <div className="rounded-2xl bg-white p-5 shadow border border-[#E5E1DB]">
+          <h3 className="font-bold text-lg flex items-center gap-1">
+            <Clock size={20} /> Recently Viewed
+          </h3>
+          <p className="text-sm text-gray-500 mt-1 mb-4">
+            Items you have recently checked out.
+          </p>
+          <div className="mt-4 flex flex-col gap-5">
+            {recentlyViewed.length > 0 ? (
+                renderSidebarLinks(recentlyViewed)
             ) : (
-                <p className="text-sm text-gray-500">No recommendations right now.</p>
+                <p className="text-sm text-gray-500">No recent history yet.</p>
             )}
           </div>
         </div>
-        )}
-        
-        <div className="rounded-2xl bg-white p-5 shadow border border-[#E5E1DB]">
-          <h3 className="font-bold text-lg flex items-center gap-1">
-            ⏰ Recently Viewed
-          </h3>
-          <p className="text-sm text-gray-500 mt-1">
-            (Client-side feature, not implemented yet)
-          </p>
-        </div>
+        {/* ----------------------------------------- */}
+
       </div>
     </div>
   );

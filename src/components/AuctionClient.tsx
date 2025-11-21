@@ -18,6 +18,36 @@ import { ArrowLeft, Clock, Zap, MessageCircle, TrendingUp, Hand, Heart } from "l
 // Register Chart.js components
 Chart.register(LineController, LineElement, PointElement, CategoryScale, LinearScale, Tooltip);
 
+// --- NEW CONSTANTS FOR RECENTLY VIEWED LOGIC ---
+const RECENTLY_VIEWED_KEY = 'famwish_recently_viewed';
+const MAX_RECENTLY_VIEWED = 3;
+
+/**
+ * Utility to add an auction ID to localStorage, maintaining a fixed size and order.
+ */
+const addRecentlyViewed = (auctionId: string) => {
+    if (typeof window === 'undefined') return;
+    
+    try {
+        let viewedIds: string[] = JSON.parse(localStorage.getItem(RECENTLY_VIEWED_KEY) || '[]');
+        
+        // 1. Remove the current ID if it already exists
+        viewedIds = viewedIds.filter(id => id !== auctionId);
+        
+        // 2. Add the current ID to the front
+        viewedIds.unshift(auctionId);
+        
+        // 3. Keep only the top MAX_RECENTLY_VIEWED items
+        viewedIds = viewedIds.slice(0, MAX_RECENTLY_VIEWED);
+        
+        localStorage.setItem(RECENTLY_VIEWED_KEY, JSON.stringify(viewedIds));
+    } catch (e) {
+        console.error("Failed to update localStorage for recently viewed.", e);
+    }
+}
+// -----------------------------------------------
+
+
 // --- Component for non-blocking UI messages (replaces alert) ---
 const MessageModal = ({ message, onClose }: { message: string; onClose: () => void }) => {
   // (Component unchanged)
@@ -95,10 +125,7 @@ export default function AuctionClient({ auctionId }: Props) {
   const [isWishlisted, setIsWishlisted] = useState(false);
   const [cooldown, setCooldown] = useState(0); 
   const [bidFeedItems, setBidFeedItems] = useState<any[]>([]); 
-
-  // --- MODIFIED: Comments state uses the new interface ---
   const [comments, setComments] = useState<Comment[]>([]); 
-  // ----------------------------------------------------
 
   const chartCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const chartInstanceRef = useRef<Chart | null>(null);
@@ -150,7 +177,7 @@ export default function AuctionClient({ auctionId }: Props) {
     setBidAmountInput(String(currentBid + amount)); 
   };
   
-  // --- MODIFIED: Post Comment now calls the API ---
+  // Post Comment now calls the API (unchanged logic)
   const postComment = async () => {
     const txt = commentInput.trim();
     if (!txt) return;
@@ -192,9 +219,8 @@ export default function AuctionClient({ auctionId }: Props) {
         setCommentInput(txt);
     }
   };
-  // ----------------------------------------------
   
-  // --- NEW: Fetch Comments Function ---
+  // Fetch Comments Function (unchanged logic)
   const fetchComments = useCallback(async () => {
     try {
         const res = await fetch(`/api/auctions/${auctionId}/comments`);
@@ -208,9 +234,8 @@ export default function AuctionClient({ auctionId }: Props) {
         console.error("Network error fetching comments:", e);
     }
   }, [auctionId]);
-  // ----------------------------------
 
-  // --- Update fetchAuctionDetails to use fetchComments ---
+  // Update fetchAuctionDetails (unchanged logic)
   const fetchAuctionDetails = useCallback(async () => {
     try {
       setLoading(true);
@@ -263,7 +288,7 @@ export default function AuctionClient({ auctionId }: Props) {
     }
   }, [auctionId, session, fetchComments]); 
 
-  // --- API Logic Handler: Place Bid (unchanged) ---
+  // API Logic Handler: Place Bid (unchanged logic)
   const placeBid = async () => {
     const raw = bidAmountInput.trim();
     setBidAmountInput('');
@@ -311,7 +336,7 @@ export default function AuctionClient({ auctionId }: Props) {
     }
   };
 
-  // --- Wishlist Toggle Handler (unchanged) ---
+  // Wishlist Toggle Handler (unchanged logic)
   const handleWishlistToggle = useCallback(async () => {
     if (!session) {
       alert("Please log in to add items to your wishlist.");
@@ -343,7 +368,14 @@ export default function AuctionClient({ auctionId }: Props) {
     fetchAuctionDetails(); 
   }, [fetchAuctionDetails]); 
   
-  // 2. NEW: Comments Polling Effect (simulates real-time)
+  // 2. NEW: Track Recently Viewed on Mount/ID Change
+  useEffect(() => {
+    if (auctionId) {
+      addRecentlyViewed(auctionId);
+    }
+  }, [auctionId]);
+  
+  // 3. Comments Polling Effect (simulates real-time)
   useEffect(() => {
     // Only poll if we have successfully fetched the initial data
     if (auction && !fetchError) {
@@ -352,7 +384,7 @@ export default function AuctionClient({ auctionId }: Props) {
     }
   }, [auction, fetchError, fetchComments]); 
 
-  // 3. Chart Initialization and Update
+  // 4. Chart Initialization and Update (unchanged logic)
   useEffect(() => {
     if (chartCanvasRef.current && auction) {
         if (chartInstanceRef.current) {
@@ -391,7 +423,7 @@ export default function AuctionClient({ auctionId }: Props) {
     };
   }, [auction]);
   
-  // 4. Simulation Intervals
+  // 5. Simulation Intervals (unchanged logic)
   useEffect(() => {
     if (!auction) return; 
     const watcherInterval = setInterval(() => {
@@ -402,7 +434,7 @@ export default function AuctionClient({ auctionId }: Props) {
     };
   }, [auction]);
   
-  // 5. Cooldown Timer for UI
+  // 6. Cooldown Timer for UI (unchanged logic)
   useEffect(() => {
     if (cooldown > 0) {
       const timer = setTimeout(() => {
@@ -412,7 +444,7 @@ export default function AuctionClient({ auctionId }: Props) {
     }
   }, [cooldown]);
 
-  // 6. Auto-Bid Logic
+  // 7. Auto-Bid Logic (unchanged logic)
   useEffect(() => {
     if (!isAutoEnabled || topBidder === yourUser || !autoMaxInput || isNaN(Number(autoMaxInput))) return;
     const maxBid = parseInt(autoMaxInput, 10);
@@ -434,7 +466,7 @@ export default function AuctionClient({ auctionId }: Props) {
   }, [isAutoEnabled, topBidder, currentBid, yourTotalBid, autoMaxInput, pushFeed, pushPrice, updateImpact, yourUser]);
 
 
-  // Derived UI State (unchanged)
+  // Derived UI State (unchanged logic)
   const heatScore = (auction && bidsTotal) ? Math.min(100, Math.max(20, Math.round(bidsTotal * 2.5 + watchers * 0.1))) : 50; 
   const isTopBidder = topBidder === yourUser;
   const bidDiff = currentBid - yourTotalBid;
