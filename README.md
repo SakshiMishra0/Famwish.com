@@ -2,105 +2,106 @@
 
 > **Make Wishes Come True. One Bid. One Act. One Impact.**
 
-**Famwish** is a modern philanthropy platform that connects donors, celebrities, and NGOs through meaningful auctions. Built with the latest web technologies, it ensures transparency and measurable impact for every contribution.
+**Famwish** is a modern philanthropy platform connecting donors, celebrities, and NGOs through transparent, impact-driven auctions. Every bid contributes directly to verified causes.
 
-![Next.js](https://img.shields.io/badge/Next.js-16.0-black?style=for-the-badge&logo=next.js)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.0-blue?style=for-the-badge&logo=typescript)
-![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-4.0-38B2AC?style=for-the-badge&logo=tailwind-css)
-![MongoDB](https://img.shields.io/badge/MongoDB-6.0-47A248?style=for-the-badge&logo=mongodb)
+![Next.js](https://img.shields.io/badge/Next.js-16-black?style=for-the-badge&logo=next.js)
+![React](https://img.shields.io/badge/React-19-blue?style=for-the-badge&logo=react)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-blue?style=for-the-badge&logo=typescript)
+![Tailwind](https://img.shields.io/badge/Tailwind-4-38B2AC?style=for-the-badge&logo=tailwind-css)
+![MongoDB](https://img.shields.io/badge/MongoDB-6-47A248?style=for-the-badge&logo=mongodb)
 
 ---
 
 ## 🚀 Key Features
 
-- **🏷️ Live Auctions**: Real-time bidding system for exclusive items and experiences.
-- **❤️ Philanthropy Tracking**: Track top philanthropists and their contributions.
-- **🤝 Verified NGOs**: Partnered with verified organizations for transparent impact.
-- **🎁 Wishlists**: Users can save and track their favorite auctions.
-- **🔐 Secure Authentication**: Powered by NextAuth.js for safe and easy login.
+- 🏷️ Live real-time auctions  
+- ❤️ Transparent donation & impact tracking  
+- 🤝 Verified NGO partnerships  
+- 🎁 Wishlist & auction monitoring  
+- 🔐 Secure authentication  
 
 ---
 
-## 🛠️ Tech Stack
+## 🏗️ Core Framework & Libraries
 
-- **Framework**: [Next.js 16](https://nextjs.org/) (App Router)
-- **Language**: [TypeScript](https://www.typescriptlang.org/)
-- **Styling**: [Tailwind CSS v4](https://tailwindcss.com/)
-- **Database**: [MongoDB](https://www.mongodb.com/)
-- **Authentication**: [NextAuth.js](https://next-auth.js.org/)
-- **Icons**: [Lucide React](https://lucide.dev/)
+- **Framework**: Next.js v16.0.3 (SSR, SEO, App Router)
+- **UI Library**: React v19.2.0 (latest hooks & features)
+- **Language**: TypeScript v5+ (type-safe & scalable)
 
 ---
 
-## 🏁 Getting Started
+## 🎨 Styling & UI / UX
 
-Follow these steps to set up the project locally.
+- **CSS Framework**: Tailwind CSS v4.1.17
+- **Icons**: Lucide React
+- **Charts / Visuals**: Chart.js
+- **CSS Processing**: PostCSS & Autoprefixer
 
-### 1. Clone the repository
+---
 
-```bash
-git clone https://github.com/SakshiMishra0/Famwish.com.git
+## 🔐 Authentication & Security
+
+- **Authentication**: NextAuth.js v4
+- **Adapter**: MongoDB Adapter
+- **Password Security**: bcrypt hashing
+
+---
+
+## 🛠️ Build & Code Quality
+
+- **Build Tool**: Next.js built-in compiler (Turbo / Webpack)
+- **Linting**: ESLint v9
+
+---
+
+## 🏁 Local Setup
+
+### Clone repository
+git clone https://github.com/SakshiMishra0/Famwish.com.git  
 cd Famwish.com
-```
 
-### 2. Install dependencies
+### Install dependencies
+npm install  
+or yarn / pnpm
 
-```bash
-npm install
-# or
-yarn install
-# or
-pnpm install
-```
-
-### 3. Configure Environment Variables
-
-Create a `.env.local` file in the root directory and add the following variables:
-
-```env
-MONGODB_URI=mongodb://localhost:27017
-NEXTAUTH_SECRET=your_super_secret_key
+### Environment variables (.env.local)
+MONGODB_URI=mongodb://localhost:27017  
+MONGODB_DB=famwish  
+NEXTAUTH_SECRET=your_secret_key  
 NEXTAUTH_URL=http://localhost:3000
-MONGODB_DB="famwish"
-```
 
-> **Note**: Replace `your_super_secret_key` with a secure random string.
-
-### 4. Run the development server
-
-```bash
+### Run project
 npm run dev
-```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open → http://localhost:3000
 
 ---
 
 ## 📂 Project Structure
 
-```
-src/
-├── app/             # App Router pages and layouts
-├── components/      # Reusable UI components
-├── lib/             # Utility libraries (MongoDB connection, etc.)
-├── types/           # TypeScript type definitions
-└── utils/           # Helper functions
-```
+src/  
+├── app/          # Routes & layouts  
+├── components/   # Reusable UI components  
+├── lib/          # DB & helpers  
+├── types/        # TypeScript types  
+└── utils/        # Utility functions  
 
 ---
 
-## 🤝 Contributing
+## 🤝 Contribution
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the project
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+- Fork repository  
+- Create feature branch  
+- Commit changes  
+- Open Pull Request  
 
 ---
 
 ## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the **MIT License**.  
+You are free to use, modify, and distribute this project with attribution.
+
+---
+
+**Famwish — where generosity meets technology.**
