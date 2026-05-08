@@ -8,11 +8,18 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Star, User, HeartHandshake, UploadCloud, Eye, EyeOff, LogIn } from "lucide-react";
 
 // --- PasswordInput Component ---
-function PasswordInput({ value, onChange }: { 
-  value: string, 
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void 
+function PasswordInput({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => void;
 }) {
-  const [showPassword, setShowPassword] = useState(false);
+  const [showPassword, setShowPassword] =
+    useState(false);
+
   return (
     <div className="relative w-full">
       <input
@@ -21,19 +28,27 @@ function PasswordInput({ value, onChange }: {
         placeholder="Password"
         onChange={onChange}
         value={value}
-        className="w-full px-4 py-2 rounded-md border"
+        className="w-full rounded-md border px-4 py-3 pr-12 outline-none focus:border-[#2F235A]"
         required
       />
+
       <button
         type="button"
-        onClick={() => setShowPassword(!showPassword)}
-        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-800"
+        onClick={() =>
+          setShowPassword(!showPassword)
+        }
+        className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-500 hover:text-[#2F235A] transition"
       >
-        {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+        {showPassword ? (
+          <EyeOff size={18} />
+        ) : (
+          <Eye size={18} />
+        )}
       </button>
     </div>
   );
 }
+
 
 // --- ImageUploader Component ---
 function ImageUploader({ imagePreview, onChange }: {
@@ -117,6 +132,15 @@ function LoginForm() {
         value={formData.password || ''}
         onChange={handleChange}
       />
+
+<button
+  type="button"
+  onClick={() => signIn("google")}
+  className="mt-2-w-full rounded-xl border border-gray-300 bg-white py-3 font-semibold hover:bg-gray-50 hover:border-[#2F235A] transition mt-1"
+>
+  Continue with Google
+</button>
+
       {error && <p className="text-red-600 text-sm text-center">{error}</p>}
       <button
         type="submit"
@@ -259,6 +283,16 @@ function SignupForm() {
             value={formData.password || ''}
             onChange={handleChange}
           />
+      
+<button
+  type="button"
+  onClick={() => signIn("google")}
+  className="w-full rounded-xl border border-gray-300 bg-white py-3 font-semibold hover:bg-gray-50 hover:border-[#2F235A] transition mt-1"
+>
+  Continue with Google
+</button>
+
+
           {error && <p className="text-red-600 text-sm text-center">{error}</p>}
           <button
             type="submit"
@@ -267,6 +301,7 @@ function SignupForm() {
           >
             {loading ? "Creating Account..." : "Create Account"}
           </button>
+
         </>
       )}
     </form>
