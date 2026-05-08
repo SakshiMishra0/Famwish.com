@@ -70,10 +70,16 @@ export default function AuctionCard({ auction, isInitiallyWishlisted }: Props) {
         flex flex-col
       "
     >
-      {/* LIVE BADGE */}
-      <span className="mb-2 inline-flex items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-600">
-        🔴 LIVE
-      </span>
+      {/* DYNAMIC BADGE */}
+      {new Date(auction.endDate).getTime() > new Date().getTime() ? (
+        <span className="mb-2 inline-flex w-fit items-center gap-1 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-600">
+          🔴 LIVE
+        </span>
+      ) : (
+        <span className="mb-2 inline-flex w-fit items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+          ⚪ ENDED
+        </span>
+      )}
 
       {/* Image and Wishlist Button Container */}
       <div className="relative">

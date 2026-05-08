@@ -27,10 +27,10 @@ export default function SearchBar({ initialQuery, onLocalSearch, mode }: SearchB
       onLocalSearch(searchTerm.trim());
     } else if (searchTerm.trim()) {
       // Default behavior: navigate to the auction page with the search query
-      router.push(`/auction?q=${encodeURIComponent(searchTerm.trim())}`);
+      router.push(`/auctions?q=${encodeURIComponent(searchTerm.trim())}`);
     } else {
       // If search is empty, go to the auction page *without* the query (for global search)
-      router.push("/auction");
+      router.push("/auctions");
     }
   };
 

@@ -112,7 +112,7 @@ export async function POST(request: Request) {
 
     try {
         // --- MODIFIED: Destructure ngoPartnerId from the body ---
-        const { title, startingBid, category, description, endDate, titleImage, ngoPartnerId } = await request.json(); 
+        const { title, startingBid, bidIncrement, category, description, endDate, titleImage, ngoPartnerId } = await request.json(); 
 
         if (!title || !startingBid || !endDate || !ngoPartnerId) {
             return NextResponse.json({ error: "Missing required fields: title, starting bid, end date, or NGO partner." }, { status: 400 });
@@ -139,7 +139,8 @@ export async function POST(request: Request) {
             _id: new ObjectId(),
             title,
             startingBid: numericBid,
-            currentHighBid: numericBid, 
+            bidIncrement: Number(bidIncrement) || Math.max(100, Math.round(numericBid * 0.05)),
+            currentHighBid: numericBid,  
             bid: `₹${numericBid.toLocaleString('en-IN')}`, 
             category: category || "Other",
             description: description || "",

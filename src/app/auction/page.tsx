@@ -14,6 +14,7 @@ interface Auction {
   bid: string;
   bids: number;
   isWishlisted: boolean;
+  endDate: string;
   titleImage?: string | null;
 }
 
@@ -365,9 +366,15 @@ function AuctionsPage() {
               >
                 <div className="relative">
                   <Link href={`/auction/${auction._id}`} className="block">
-                    <span className="absolute top-3 left-3 rounded-full bg-red-100 px-2 py-[2px] text-[11px] font-semibold text-red-600">
-                      LIVE
-                    </span>
+                    {new Date(auction.endDate).getTime() > new Date().getTime() ? (
+                      <span className="absolute top-3 left-3 rounded-full bg-red-100 px-2 py-[2px] text-[11px] font-semibold text-red-600 z-10">
+                        LIVE
+                      </span>
+                    ) : (
+                      <span className="absolute top-3 left-3 rounded-full bg-gray-100 px-2 py-[2px] text-[11px] font-semibold text-gray-600 z-10">
+                        ENDED
+                      </span>
+                    )}
                     {auction.titleImage ? (
                       <img
                         src={auction.titleImage}

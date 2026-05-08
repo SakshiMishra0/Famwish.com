@@ -1,18 +1,18 @@
 // src/app/leaderboard/page.tsx
 "use client";
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect } from "react";
 import CelebrityStrip from "@/components/CelebrityStrip";
 import TimeFilters from "@/components/TimeFilters";
 import ModeSwitch from "@/components/ModeSwitch";
 import LeaderboardList from "@/components/LeaderboardList"; 
 import LeaderboardProfile from "@/components/LeaderboardProfile"; 
 import SearchBar from "@/components/SearchBar"; 
-import { celebs } from "@/lib/mockData";
 import { Celeb, Fan } from "@/types";
 
 export default function LeaderboardPage() {
-  const [selectedCeleb, setSelectedCeleb] = useState<Celeb>(celebs[0]);
+  const [realCelebs, setRealCelebs] = useState<Celeb[]>([]);
+  const [selectedCeleb, setSelectedCeleb] = useState<Celeb | null>(null);
   const [timeframe, setTimeframe] = useState<"week" | "month" | "year" | "all">("week");
   const [mode, setMode] = useState<"celeb" | "global">("celeb");
   const [searchQuery, setSearchQuery] = useState(""); // General search query for strip/fans
@@ -24,12 +24,31 @@ export default function LeaderboardPage() {
     setSearchQuery(query);
   }, []);
   
+  // Fetch real celebrities on mount
+  useEffect(() => {
+      async function fetchCelebs() {
+          try {
+              const res = await fetch('/api/celebs');
+              if (res.ok) {
+                  const data = await res.json();
+                  setRealCelebs(data);
+                  if (data.length > 0) {
+                      setSelectedCeleb(data[0]);
+                  }
+              }
+          } catch (e) {
+              console.error("Error fetching celebs:", e);
+          }
+      }
+      fetchCelebs();
+  }, []);
+
   // Logic to determine the celebrity data for the list/profile.
   const activeCelebData = useMemo(() => {
-      const foundCeleb = celebs.find(c => c.id === selectedCeleb.id);
+      if (!selectedCeleb) return null;
+      const foundCeleb = realCelebs.find(c => c.id === selectedCeleb.id);
       return foundCeleb || selectedCeleb;
-
-  }, [selectedCeleb]);
+  }, [selectedCeleb, realCelebs]);
   
   const handleCelebSelect = useCallback((celeb: Celeb) => {
       setSelectedCeleb(celeb);
@@ -78,12 +97,12 @@ export default function LeaderboardPage() {
                         {searchQuery ? 'Search Results' : 'Choose a Celebrity to View Fan Ranks'}
                     </h2>
                     <p className="text-[13px] text-[#6B6B6B]">
-                        Currently focused on: {selectedCeleb.name}
+                        Currently focused on: {selectedCeleb?.name || "Loading..."}
                     </p>
                 </div>
                 <CelebrityStrip
-                    celebs={celebs as any} // Cast to satisfy updated interface
-                    selected={activeCelebData}
+                    celebs={realCelebs}
+                    selected={activeCelebData as Celeb}
                     onSelect={handleCelebSelect}
                     searchTerm={searchQuery} // Filter strip content
                 />
@@ -96,24 +115,28 @@ export default function LeaderboardPage() {
             
             {/* LEFT COLUMN: Profile Card & Top Fans (Dynamic) */}
             <div className="lg:order-1 order-2">
-                <LeaderboardProfile
-                    selectedCeleb={activeCelebData}
-                    combinedFans={combinedFans}
-                    onChallenge={() => {}} 
-                    yourId="you" 
-                    mode={mode}
-                />
+                {activeCelebData && (
+                    <LeaderboardProfile
+                        selectedCeleb={activeCelebData as Celeb}
+                        combinedFans={combinedFans}
+                        onChallenge={() => {}} 
+                        yourId="you" 
+                        mode={mode}
+                    />
+                )}
             </div>
 
             {/* RIGHT COLUMN: The Main Ranking List (Fixed List) */}
             <div className="lg:order-2 order-1">
-                <LeaderboardList
-                    selectedCeleb={activeCelebData}
-                    timeframe={timeframe}
-                    mode={mode}
-                    onUpdateCombinedFans={setCombinedFans}
-                    searchQuery={searchQuery} // Pass search query for fan filtering
-                />
+                {activeCelebData && (
+                    <LeaderboardList
+                        selectedCeleb={activeCelebData as Celeb}
+                        timeframe={timeframe}
+                        mode={mode}
+                        onUpdateCombinedFans={setCombinedFans}
+                        searchQuery={searchQuery} // Pass search query for fan filtering
+                    />
+                )}
             </div>
             
         </div>

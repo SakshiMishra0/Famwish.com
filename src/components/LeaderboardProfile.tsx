@@ -63,7 +63,7 @@ export default function LeaderboardProfile({
 
 
     return (
-        <div className="space-y-6 sticky top-6 h-fit lg:col-span-1">
+        <div className="space-y-6 sticky top-6 h-fit max-h-[calc(100vh-2rem)] overflow-y-auto lg:col-span-1 pb-4">
           
           {/* 1. Celebrity Profile Card */}
           <div className="rounded-2xl bg-white p-6 shadow-xl border border-[#E8E3DB] flex flex-col items-center text-center">

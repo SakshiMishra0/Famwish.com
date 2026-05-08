@@ -22,6 +22,19 @@
 
 ---
 
+## 🏆 MVP Platform Stabilization & Investor Demo Updates
+
+We recently finalized our platform architecture for our seed-stage investor demonstration. 
+
+**Major Integrations:**
+- **Real-time Bidding Engine:** Scalable short-polling architecture syncing `bidsHistory` across clients.
+- **Anti-Fraud & Compliance:** Earnest Money Deposit (EMD) via Razorpay, Mock KYC (DigiLocker) checks, and Shill-bidding protections preventing creators from self-bidding.
+- **RBI-Compliant Escrow Logic:** Modeled split payments using Razorpay Route, safely bypassing sandbox limits for high-value test auctions.
+- **Dynamic Leaderboards & Impact Feeds:** fully decoupled from mock data, now querying real MongoDB aggregations with dynamic updates.
+- **Seeding Script:** Included `seed.mjs` for resetting the test environment with high-profile mock Indian VIPs and realistic auction metrics.
+
+---
+
 ## 🏗️ Core Framework & Libraries
 
 - **Framework**: Next.js v16.0.3 (SSR, SEO, App Router)

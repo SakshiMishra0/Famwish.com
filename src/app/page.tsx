@@ -6,6 +6,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
 import AuctionCard from "@/components/AuctionCard";
 import SearchBar from "@/components/SearchBar";
+import Link from "next/link";
 
 // Define the type for our auction data
 interface Auction extends Document {
@@ -192,9 +193,9 @@ export default async function HomePage() {
           Famwish works with verified NGOs and organizations to ensure
           transparency and measurable impact for every auction.
         </p>
-        <button className="mt-4 rounded-lg border px-4 py-2 text-sm hover:bg-white">
+        <Link href="/ngos" className="mt-4 inline-block rounded-lg border px-4 py-2 text-sm hover:bg-white transition">
           View all NGOs →
-        </button>
+        </Link>
       </div>
 
       {/* 4. Pass the real philanthropist data to the component */}

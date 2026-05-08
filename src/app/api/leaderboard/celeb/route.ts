@@ -91,7 +91,7 @@ export async function GET(request: NextRequest) {
             // Mock points/bids based on wins
             points: { $multiply: ["$auctionsWon", 1000] }, 
             bids: { $multiply: ["$auctionsWon", 5] }, 
-            wishes: 0, 
+            wishes: { $literal: 0 }, 
             auctionsWon: "$auctionsWon", // Keep the key for clarity
         }
     });
