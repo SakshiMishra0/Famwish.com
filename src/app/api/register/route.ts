@@ -32,11 +32,15 @@ export async function POST(request: Request) {
     // Create the new user
     const result = await db.collection("users").insertOne({
       name: fullName,
-      email: email,
+      email: email.toLowerCase(),
       password: hashedPassword,
       role: role, // 'bidder', 'celebrity', 'ngo'
-      profilePicture: profilePicture || null, 
+      profilePicture: profilePicture || null,
+      profileCompleted: true,
+      authProvider: "credentials",
+      emailVerified: true,
       createdAt: new Date(),
+      updatedAt: new Date(),
     });
 
     return NextResponse.json(

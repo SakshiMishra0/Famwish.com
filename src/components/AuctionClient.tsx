@@ -4,6 +4,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react"; 
+import { joinAuctionRoom, leaveAuctionRoom } from "@/lib/socket-client";
 import {
   Chart,
   LineController,
@@ -172,6 +173,44 @@ export default function AuctionClient({ auctionId }: Props) {
     setImpactRaised(prev => prev + donated);
     setImpactLives(prev => prev + Math.max(1, Math.round(donated / 200)));
   }, []);
+
+  const handleBidPlaced = useCallback((payload: any) => {
+    const highBid = payload?.currentHighBid ?? payload?.bid?.amount;
+    const bidder = payload?.bid?.userName || payload?.newBid?.userName || "Someone";
+
+    if (typeof highBid === "number" && highBid > currentBid) {
+      setCurrentBid(highBid);
+      setBidsTotal(prev => prev + 1);
+      setTopBidder(bidder);
+      pushFeed(`${bidder} bid ${formatINR(highBid)}`);
+      pushPrice(highBid);
+      updateImpact(highBid);
+    }
+  }, [currentBid, pushFeed, pushPrice, updateImpact]);
+
+  const handleAuctionUpdated = useCallback((payload: any) => {
+    if (!payload) return;
+    if (typeof payload.currentHighBid === "number") {
+      setCurrentBid(payload.currentHighBid);
+    }
+    if (typeof payload.bids === "number") {
+      setBidsTotal(payload.bids);
+    }
+    if (payload.topBidder) {
+      setTopBidder(payload.topBidder);
+    }
+    pushFeed(`Auction updated live: ${payload.title || "pricing changed"}`);
+  }, [pushFeed]);
+
+  const handleBidderJoined = useCallback((payload: any) => {
+    if (!payload) return;
+    pushFeed(`Bidder joined ${payload.auctionRoom || "the room"}`);
+  }, [pushFeed]);
+
+  const handleBidderLeft = useCallback((payload: any) => {
+    if (!payload) return;
+    pushFeed(`Bidder left ${payload.auctionRoom || "the room"}`);
+  }, [pushFeed]);
 
   const quickAdd = (amount: number) => {
     setBidAmountInput(String(currentBid + amount)); 
@@ -443,6 +482,36 @@ export default function AuctionClient({ auctionId }: Props) {
       return () => clearTimeout(timer);
     }
   }, [cooldown]);
+
+  useEffect(() => {
+    if (!auctionId) return;
+    let mounted = true;
+    let socket: any = null;
+
+    joinAuctionRoom(auctionId)
+      .then((clientSocket) => {
+        if (!mounted) return;
+        socket = clientSocket;
+        socket.on("bid_placed", handleBidPlaced);
+        socket.on("auction_updated", handleAuctionUpdated);
+        socket.on("bidder_joined", handleBidderJoined);
+        socket.on("bidder_left", handleBidderLeft);
+      })
+      .catch((error) => {
+        console.error("Socket join failed:", error);
+      });
+
+    return () => {
+      mounted = false;
+      if (socket) {
+        socket.off("bid_placed", handleBidPlaced);
+        socket.off("auction_updated", handleAuctionUpdated);
+        socket.off("bidder_joined", handleBidderJoined);
+        socket.off("bidder_left", handleBidderLeft);
+        leaveAuctionRoom(auctionId).catch(() => undefined);
+      }
+    };
+  }, [auctionId, handleBidPlaced, handleAuctionUpdated, handleBidderJoined, handleBidderLeft]);
 
   // 7. Auto-Bid Logic (unchanged logic)
   useEffect(() => {

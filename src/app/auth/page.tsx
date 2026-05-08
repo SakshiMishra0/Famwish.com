@@ -105,15 +105,27 @@ function LoginForm() {
 
     const result = await signIn("credentials", {
       ...formData,
-      redirect: false, 
+      redirect: false,
     });
 
     setLoading(false);
     if (result?.error) {
-      setError("Invalid email or password."); 
+      setError("Invalid email or password.");
+      return;
+    }
+
+    const res = await fetch("/api/auth/me");
+    const user = await res.json();
+
+    if (!res.ok || !user) {
+      router.push("/auth");
+      return;
+    }
+
+    if (!user.profileCompleted) {
+      router.push("/onboarding");
     } else {
-      router.push("/"); // On success, go to homepage
-      router.refresh(); // Refresh session data
+      router.push("/profile/me");
     }
   };
 
@@ -135,7 +147,7 @@ function LoginForm() {
 
 <button
   type="button"
-  onClick={() => signIn("google")}
+  onClick={() => signIn("google", { callbackUrl: "/onboarding" })}
   className="mt-2-w-full rounded-xl border border-gray-300 bg-white py-3 font-semibold hover:bg-gray-50 hover:border-[#2F235A] transition mt-1"
 >
   Continue with Google
@@ -286,7 +298,7 @@ function SignupForm() {
       
 <button
   type="button"
-  onClick={() => signIn("google")}
+  onClick={() => signIn("google", { callbackUrl: "/onboarding" })}
   className="w-full rounded-xl border border-gray-300 bg-white py-3 font-semibold hover:bg-gray-50 hover:border-[#2F235A] transition mt-1"
 >
   Continue with Google
