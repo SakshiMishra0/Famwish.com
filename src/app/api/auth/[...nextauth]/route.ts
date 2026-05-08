@@ -1,21 +1,22 @@
-
 // src/app/api/auth/[...nextauth]/route.ts
 
 import NextAuth, { AuthOptions, SessionStrategy } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
-
 import { MongoDBAdapter } from "@auth/mongodb-adapter";
-import clientPromise from "@/lib/mongodb";
-
 import bcrypt from "bcrypt";
 import { Adapter } from "next-auth/adapters";
+import clientPromise from "@/lib/mongodb";
 
-// Helper function to connect and get DB
+import type { AuthProvider, UserRole } from "@/types/next-auth";
+
 async function getDb() {
   const client = await clientPromise;
   return client.db(process.env.MONGODB_DB);
 }
+
+const safeString = (value: unknown): string | null =>
+  typeof value === "string" && value.length > 0 ? value : null;
 
 export const authOptions: AuthOptions = {
   adapter: MongoDBAdapter(clientPromise, {
@@ -23,13 +24,12 @@ export const authOptions: AuthOptions = {
   }) as Adapter,
 
   providers: [
-    // GOOGLE LOGIN
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+      allowDangerousEmailAccountLinking: true,
     }),
 
-    // EMAIL/PASSWORD LOGIN
     CredentialsProvider({
       name: "Credentials",
 
@@ -52,42 +52,38 @@ export const authOptions: AuthOptions = {
 
         const db = await getDb();
 
+        const email = credentials.email.toLowerCase();
+
         const user = await db.collection("users").findOne({
-          email: credentials.email.toLowerCase(),
+          email,
         });
 
         if (!user) {
-          throw new Error("No user found.");
+          throw new Error("No user found");
         }
 
-        // IMPORTANT:
-        // Google users don't have passwords
         if (!user.password) {
-          throw new Error("Please login using Google.");
+          throw new Error("Please login with Google");
         }
 
-        const isValid = await bcrypt.compare(
+        const valid = await bcrypt.compare(
           credentials.password,
           user.password as string
         );
 
-        if (!isValid) {
-          throw new Error("Invalid password.");
+        if (!valid) {
+          throw new Error("Invalid password");
         }
 
         return {
           id: user._id.toString(),
-          name: user.name,
+          name: user.name || "",
           email: user.email,
-
-          role: user.role || null,
-
-          profileCompleted:
-            user.profileCompleted || false,
-
+          role: (user.role as UserRole) ?? null,
+          profileCompleted: Boolean(user.profileCompleted),
           authProvider:
-            user.authProvider || "credentials",
-        };
+            (user.authProvider as AuthProvider) ?? "credentials",
+        } as any;
       },
     }),
   ],
@@ -104,75 +100,110 @@ export const authOptions: AuthOptions = {
 
   callbacks: {
     async signIn({ user, account }) {
-      // GOOGLE USER AUTO CREATION
-      if (
-        account?.provider === "google" &&
-        user.email
-      ) {
-        const db = await getDb();
+      const db = await getDb();
 
-        const existingUser =
-          await db.collection("users").findOne({
-            email: user.email.toLowerCase(),
-          });
+      if (account?.provider === "google" && user.email) {
+        const email = user.email.toLowerCase();
 
-        if (!existingUser) {
-          await db.collection("users").insertOne({
-            name: user.name || "",
+        const now = new Date();
 
-            email: user.email.toLowerCase(),
+        const isDevAdmin =
+          process.env.NODE_ENV !== "production" &&
+          process.env.ADMIN_EMAIL &&
+          email === process.env.ADMIN_EMAIL.toLowerCase();
 
-            password: null,
+        await db.collection("users").updateOne(
+          { email },
 
-            authProvider: "google",
+          {
+            $set: {
+              email,
+              name: safeString(user.name) ?? "",
+              profilePicture: safeString(user.image),
+              authProvider: "google",
+              updatedAt: now,
+              lastLoginAt: now,
+              role: isDevAdmin ? "admin" : null,
+              profileCompleted: isDevAdmin,
+            },
 
-            role: null,
+            $setOnInsert: {
+              createdAt: now,
+              password: null,
+              bio: "",
+              instagram: "",
+              regNumber: "",
+              onboardingStep: 1,
+              isVerifiedCelebrity: false,
+              isVerifiedNGO: false,
+              banned: false,
+              emailVerified: true,
+            },
+          },
 
-            profileCompleted: false,
-
-            emailVerified: true,
-
-            profilePicture: user.image || null,
-
-            bio: "",
-
-            instagram: "",
-
-            regNumber: "",
-
-            onboardingStep: 1,
-
-            isVerifiedCelebrity: false,
-
-            isVerifiedNGO: false,
-
-            banned: false,
-
-            createdAt: new Date(),
-
-            updatedAt: new Date(),
-
-            lastLoginAt: new Date(),
-          });
-        }
+          {
+            upsert: true,
+          }
+        );
       }
 
       return true;
     },
 
     async jwt({ token, user }) {
-      // First login only
+      const db = await getDb();
+
       if (user) {
+        const authUser = user as {
+          role?: UserRole;
+          profileCompleted?: boolean;
+          authProvider?: AuthProvider;
+        };
+
         token.id = user.id;
 
-        token.role = (user as any).role;
+        token.role = authUser.role ?? null;
 
-        token.profileCompleted =
-          (user as any).profileCompleted;
+        token.profileCompleted = Boolean(
+          authUser.profileCompleted
+        );
 
         token.authProvider =
-          (user as any).authProvider;
+          authUser.authProvider ??
+          token.authProvider ??
+          "credentials";
       }
+
+      if (token.email) {
+        const dbUser = await db.collection("users").findOne({
+          email: token.email.toLowerCase(),
+        });
+
+        if (dbUser) {
+          token.id = dbUser._id.toString();
+
+          token.role =
+            (dbUser.role as UserRole) ?? null;
+
+          token.profileCompleted = Boolean(
+            dbUser.profileCompleted
+          );
+
+          token.authProvider =
+            (dbUser.authProvider as AuthProvider) ??
+            token.authProvider ??
+            "credentials";
+        }
+      }
+
+      token.role = token.role ?? null;
+
+      token.profileCompleted = Boolean(
+        token.profileCompleted
+      );
+
+      token.authProvider =
+        token.authProvider ?? "credentials";
 
       return token;
     },
@@ -182,13 +213,15 @@ export const authOptions: AuthOptions = {
         session.user.id = token.id as string;
 
         session.user.role =
-          token.role as string;
+          (token.role as UserRole) ?? null;
 
-        session.user.profileCompleted =
-          token.profileCompleted as boolean;
+        session.user.profileCompleted = Boolean(
+          token.profileCompleted
+        );
 
         session.user.authProvider =
-          token.authProvider as string;
+          (token.authProvider as AuthProvider) ??
+          "credentials";
       }
 
       return session;

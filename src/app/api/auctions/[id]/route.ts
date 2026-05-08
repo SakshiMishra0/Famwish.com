@@ -1,8 +1,12 @@
 // src/app/api/auctions/[id]/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { MongoClient, ObjectId, Db } from "mongodb";
-import { getServerSession } from "next-auth/next"; // <-- ADDED
-import { authOptions } from "@/app/api/auth/[...nextauth]/route"; // <-- ADDED
+import { z } from "zod";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { acquireAuctionLock, releaseAuctionLock } from "@/lib/auction-lock";
+import { emitAuctionEvent } from "@/lib/socket";
+import { trackBidLatency } from "@/lib/observability";
 
 /**
  * Cached Mongo client for Next.js runtime to avoid connection explosion.
@@ -97,78 +101,96 @@ export async function POST(
       return NextResponse.json({ error: "Invalid auction ID" }, { status: 400 });
     }
 
-    const { bidAmount } = await request.json();
-
-    const newBidAmount = Number(bidAmount);
-    if (isNaN(newBidAmount) || newBidAmount <= 0) {
-        return NextResponse.json({ error: "Invalid bid amount provided." }, { status: 400 });
+    const inputSchema = z.object({
+      bidAmount: z.number().positive(),
+    });
+    const payload = await request.json();
+    const parsed = inputSchema.safeParse(payload);
+    if (!parsed.success) {
+      return NextResponse.json(
+        { error: parsed.error.issues.map((issue) => issue.message).join(", ") },
+        { status: 400 }
+      );
     }
 
-    // 1. Find the current auction state
-    const auction = await db.collection("auctions").findOne({ _id: auctionOid });
+    const newBidAmount = parsed.data.bidAmount;
+    const start = Date.now();
+    const lockToken = await acquireAuctionLock(auctionIdString, 7000);
+    if (!lockToken) {
+      return NextResponse.json(
+        { error: "Unable to acquire bid lock. Please retry in a moment." },
+        { status: 429 }
+      );
+    }
 
-    if (!auction) {
+    try {
+      const auction = await db.collection("auctions").findOne({ _id: auctionOid });
+      if (!auction) {
         return NextResponse.json({ error: "Auction not found" }, { status: 404 });
-    }
+      }
 
-    const minBid = (auction.currentHighBid || auction.startingBid || 0) + 50;
-
-    // 2. Validate the new bid
-    if (newBidAmount < minBid) {
+      const minBid = (auction.currentHighBid || auction.startingBid || 0) + 50;
+      if (newBidAmount < minBid) {
         return NextResponse.json(
-            { error: `Bid must be at least ₹${minBid.toLocaleString('en-IN')}` },
-            { status: 400 }
+          { error: `Bid must be at least ₹${minBid.toLocaleString("en-IN")}` },
+          { status: 400 }
         );
-    }
-    
-    // 3. Prepare the update document
-    const bidHistoryEntry = {
-        userId: userId,
-        userName: userName,
+      }
+
+      const bidHistoryEntry = {
+        userId,
+        userName,
         amount: newBidAmount,
         timestamp: new Date().toISOString(),
-    };
+      };
 
-    const updateDoc = {
-        $set: {
-            currentHighBid: newBidAmount,
-            topBidderId: new ObjectId(userId),
-            bid: `₹${newBidAmount.toLocaleString('en-IN')}` // For the list view
-        },
-        $push: { bidsHistory: bidHistoryEntry },
-        $inc: { bids: 1 },
-    };
-
-    // 4. Perform the update
-    const result = await db
-      .collection("auctions")
-      .findOneAndUpdate(
-        { 
+      const result = await db
+        .collection("auctions")
+        .findOneAndUpdate(
+          {
             _id: auctionOid,
-            // Ensure we only update if no one has outbid us since we fetched the price (optimistic locking)
-            currentHighBid: { $lt: newBidAmount }
-        }, 
-        updateDoc as any, 
-        { 
-            returnDocument: "after"
-        }
-      );
+            currentHighBid: { $lt: newBidAmount },
+            closed: { $ne: true },
+          },
+          {
+            $set: {
+              currentHighBid: newBidAmount,
+              topBidderId: new ObjectId(userId),
+              bid: `₹${newBidAmount.toLocaleString("en-IN")}`,
+              updatedAt: new Date(),
+            },
+            $push: { bidsHistory: bidHistoryEntry },
+            $inc: { bids: 1 },
+          } as any,
+          { returnDocument: "after" }
+        );
 
-    if (!result || !result.value) {
-      // This means the bid was too low or someone bid first
-      return NextResponse.json({ error: "Bid was too low or outdated. Please try a higher amount." }, { status: 409 });
-    }
-    
-    const updated = result.value;
+      if (!result || !result.value) {
+        return NextResponse.json(
+          { error: "Bid was too low, outdated, or the auction ended." },
+          { status: 409 }
+        );
+      }
 
-    return NextResponse.json(
-        { 
-            message: "Bid placed successfully",
-            newBid: bidHistoryEntry,
-            auction: normalizeDoc(updated),
-        }, 
+      const updated = result.value;
+      trackBidLatency(auctionIdString, Date.now() - start);
+      emitAuctionEvent(auctionIdString, "bid_placed", {
+        auctionId: auctionIdString,
+        bid: bidHistoryEntry,
+        currentHighBid: updated.currentHighBid,
+      });
+
+      return NextResponse.json(
+        {
+          message: "Bid placed successfully",
+          newBid: bidHistoryEntry,
+          auction: normalizeDoc(updated),
+        },
         { status: 200 }
-    );
+      );
+    } finally {
+      await releaseAuctionLock(auctionIdString, lockToken);
+    }
   } catch (err: any) {
     console.error("POST /api/auctions/[id] (Place Bid) error:", err);
     return NextResponse.json({ error: err?.message || "Server error during bid process" }, { status: 500 });

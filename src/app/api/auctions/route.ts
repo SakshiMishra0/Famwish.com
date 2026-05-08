@@ -1,9 +1,11 @@
 // src/app/api/auctions/route.ts
 import { NextResponse, NextRequest } from "next/server";
+import { z } from "zod";
 import clientPromise from "@/lib/mongodb";
 import { Document, ObjectId } from "mongodb";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/app/api/auth/[...nextauth]/route";
+import { emitAuctionEvent } from "@/lib/socket";
 
 const DATABASE_NAME = process.env.MONGODB_DB;
 
@@ -111,58 +113,72 @@ export async function POST(request: Request) {
     }
 
     try {
-        // --- MODIFIED: Destructure ngoPartnerId from the body ---
-        const { title, startingBid, category, description, endDate, titleImage, ngoPartnerId } = await request.json(); 
+        const body = await request.json();
+        const auctionSchema = z.object({
+            title: z.string().min(1),
+            startingBid: z.preprocess((value) => Number(value), z.number().positive()),
+            category: z.string().optional().default("Other"),
+            description: z.string().optional().default(""),
+            endDate: z.string().refine((value) => !Number.isNaN(Date.parse(value)), {
+              message: "Invalid end date.",
+            }),
+            titleImage: z.string().nullable().optional(),
+            auctionType: z.enum(["charity", "artist", "celebrity", "collectible"]).default("charity"),
+            ngoPartnerId: z.string().optional(),
+        });
+        const data = auctionSchema.parse(body);
 
-        if (!title || !startingBid || !endDate || !ngoPartnerId) {
-            return NextResponse.json({ error: "Missing required fields: title, starting bid, end date, or NGO partner." }, { status: 400 });
+        if (data.auctionType === "charity" && !data.ngoPartnerId) {
+            return NextResponse.json({ error: "NGO partner ID is required for charity auctions." }, { status: 400 });
         }
-        
-        const numericBid = Number(startingBid);
-        if (isNaN(numericBid) || numericBid <= 0) {
-            return NextResponse.json({ error: "Starting bid must be a positive number." }, { status: 400 });
-        }
-        
-        // Validate ngoPartnerId as a valid ObjectId
-        let ngoOid: ObjectId;
-        try {
-            ngoOid = new ObjectId(ngoPartnerId);
-        } catch (e) {
-            return NextResponse.json({ error: "Invalid NGO partner ID format." }, { status: 400 });
-        }
-        
+
         const client = await clientPromise;
         const db = client.db(process.env.MONGODB_DB);
         const userId = new ObjectId((session.user as { id: string }).id);
-        
-        const newAuction: Omit<AuctionDocument, 'bid'> & { bid: string } = {
-            _id: new ObjectId(),
-            title,
-            startingBid: numericBid,
-            currentHighBid: numericBid, 
-            bid: `₹${numericBid.toLocaleString('en-IN')}`, 
-            category: category || "Other",
-            description: description || "",
-            endDate: new Date(endDate).toISOString(),
+
+        let ngoOid: ObjectId | null = null;
+        if (data.ngoPartnerId) {
+            try {
+                ngoOid = new ObjectId(data.ngoPartnerId);
+            } catch (error) {
+                return NextResponse.json({ error: "Invalid NGO partner ID format." }, { status: 400 });
+            }
+        }
+
+        const newAuction = {
+            title: data.title,
+            description: data.description,
+            category: data.category,
+            auctionType: data.auctionType,
+            startingBid: data.startingBid,
+            currentHighBid: data.startingBid,
+            bid: `₹${data.startingBid.toLocaleString("en-IN")}`,
+            endDate: new Date(data.endDate).toISOString(),
             createdBy: userId,
-            ngoPartnerId: ngoOid, // <--- SAVING THE NGO ID
+            ngoPartnerId: ngoOid,
             bids: 0,
             bidsHistory: [],
             createdAt: new Date(),
-            titleImage: titleImage || null, 
-        } as Omit<AuctionDocument, 'bid'> & { bid: string }; 
+            titleImage: data.titleImage || null,
+            closed: false,
+        };
 
         const result = await db.collection("auctions").insertOne(newAuction);
+        emitAuctionEvent(result.insertedId.toString(), "auction_created", {
+          auctionId: result.insertedId.toString(),
+          title: data.title,
+          auctionType: data.auctionType,
+        });
 
         return NextResponse.json(
             { message: "Auction created successfully", auctionId: result.insertedId.toString() },
             { status: 201 }
         );
 
-    } catch (e) {
+    } catch (e: any) {
         console.error("Error creating auction:", e);
         return NextResponse.json(
-            { error: "Failed to create auction" },
+            { error: e?.message || "Failed to create auction" },
             { status: 500 }
         );
     }
